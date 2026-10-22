@@ -1,0 +1,48 @@
+paths:
+  raw: data/raw
+  interim: data/interim
+  labeled: data/labeled
+  index: data/index
+  runs: eval/runs
+
+naics:
+  version: 2022
+  # Census files (https://www.census.gov/naics/)
+  files:
+    codes: 2-6 digit_2022_Codes.xlsx
+    descriptions: 2022_NAICS_Descriptions.xlsx
+    index: 2022_NAICS_Index_File.xlsx
+    cross_references: 2022_NAICS_Cross_References.xlsx
+    concordance_2017_2022: 2017_to_2022_NAICS.xlsx
+
+emission_factors:
+  # EPA Supply Chain GHG Emission Factors v1.3 (kgCO2e per 2022 USD)
+  file: SupplyChainGHGEmissionFactors_v1.3.0_NAICS_CO2e_USD2022.csv
+  base_year: 2022
+  use_margins: true   # purchaser-price factors
+
+usaspending:
+  fiscal_years: [2023, 2024]
+  award_types: [A, B, C, D]   # contracts
+  pool_size: 20000            # train/dev pool for few-shot + calibration
+  test_size: 350
+
+pcard:
+  source: data.ok.gov         # Oklahoma OMES purchase-card transactions
+  test_size: 150
+
+eval_split_seed: 42
+
+retrieval:
+  embedder: intfloat/e5-base-v2
+  top_k: 20
+  rerank_top_n: 50
+  hybrid: true
+
+llm:
+  model: gpt-4o-mini
+  temperature: 0.0
+  n_samples_self_consistency: 5
+
+abstention:
+  coverage_targets: [0.7, 0.8, 0.9]
