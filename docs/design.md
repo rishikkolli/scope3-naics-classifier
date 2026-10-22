@@ -13,7 +13,7 @@ Many-to-many relationships between text and codes need to be checked against the
 | **Census NAICS Index File** — ~20k short index entries, each → one NAICS-6; near-identical phrases can appear under different codes | Retrieval returns several codes for the same phrase | Index each entry as its own chunk; aggregate chunk scores **by code** (max and sum); dedupe before passing candidates to the LLM |
 | **Cross-references** ("…except X, see 333xxx") | Definitions of neighboring codes share vocabulary | Store cross-refs as separate, negatively-labeled text; show them to the LLM as "not this code — see Y" hints |
 | **EPA factors are sector-level** — many NAICS-6 codes share one factor | Some 6-digit errors cost 0 kgCO2e | Report a *factor-equivalent* accuracy level; emissions error naturally handles this |
-| **NAICS 2017 vs 2022** — USAspending labels mix versions | Label in one version, index in another | Map all labels to 2022 via the Census concordance; flag 1→many splits |
+| **NAICS 2017 vs 2022** — USAspending labels mix versions, and **EPA v1.3 factors are keyed by 2017 NAICS** (verified from the CSV header) | Label/index in 2022, factors in 2017 | Classify in 2022; map labels to 2022 and predictions to 2017 for factor lookup via the Census concordances; flag 1→many splits (use mean factor of targets, report how many items are affected) |
 
 Deliverable: a table of (a) # index phrases mapping to >1 code, (b) # NAICS-6 codes per unique EPA factor, (c) # 2017→2022 splits.
 

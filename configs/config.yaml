@@ -19,7 +19,8 @@ emission_factors:
   # EPA Supply Chain GHG Emission Factors v1.3 (kgCO2e per 2022 USD)
   file: SupplyChainGHGEmissionFactors_v1.3.0_NAICS_CO2e_USD2022.csv
   base_year: 2022
-  use_margins: true   # purchaser-price factors
+  naics_version: 2017   # v1.3 factors are keyed by 2017 NAICS -> map 2022 predictions via concordance
+  use_margins: true     # purchaser-price factors
 
 usaspending:
   fiscal_years: [2023, 2024]
