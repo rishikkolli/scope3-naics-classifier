@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Secrets
+.env
+
+# Large / regenerable data
+data/raw/usaspending/bulk/
+data/interim/*.parquet
+data/index/
+*.faiss
+*.npy
+
+# Outputs
+eval/runs/
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
