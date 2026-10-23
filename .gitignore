@@ -11,6 +11,7 @@ venv/
 
 # Large / regenerable data
 data/raw/usaspending/bulk/
+data/raw/pcard/*_raw.csv
 data/interim/*.parquet
 data/index/
 *.faiss
