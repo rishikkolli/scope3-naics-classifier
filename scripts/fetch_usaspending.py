@@ -5,7 +5,7 @@ Each award has a free-text description, an obligated amount, and a NAICS code
 then split into: train/dev pool (few-shot + calibration) and a held-out test set.
 
 API docs: https://api.usaspending.gov/docs/endpoints
-Usage:    python scripts/fetch_usaspending.py --fy 2024 --per-sector 1000
+Usage:    python scripts/fetch_usaspending.py --fy 2024 --per-sector 300
 """
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ def fetch_sector(sector: str, fy: int, per_sector: int, page_size: int = 100) ->
             "fields": FIELDS,
             "page": page,
             "limit": page_size,
-            "sort": "Start Date",
-            "order": "desc",
+            "sort": "Award ID",
+            "order": "asc",
         }
         r = requests.post(API, json=body, timeout=120)
         r.raise_for_status()
@@ -58,7 +58,7 @@ def fetch_sector(sector: str, fy: int, per_sector: int, page_size: int = 100) ->
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--fy", type=int, default=2024)
-    ap.add_argument("--per-sector", type=int, default=1000)
+    ap.add_argument("--per-sector", type=int, default=300)
     args = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
