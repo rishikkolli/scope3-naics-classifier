@@ -19,7 +19,7 @@ The goal is *not* a prompt-engineering exercise. Effort goes into:
 - **Confidence-based abstention (required)** — showing that the system's confidence actually tracks which predictions are wrong.
 - **Error analysis** — categorized errors at every stage, weighted by emissions impact.
 
-See [`docs/design.md`](docs/design.md) for the full design and how it addresses proposal feedback.
+See [`docs/design.md`](docs/design.md) for the full design and how it addresses proposal feedback, [`docs/project_plan.pdf`](docs/project_plan.pdf) for the 2-page project plan (built by `scripts/build_project_plan_pdf.py`), and [`docs/GenAI_Project_Proposal.pdf`](docs/GenAI_Project_Proposal.pdf) for the original proposal.
 
 ## Pipeline
 
@@ -34,8 +34,8 @@ purchase text ─► query rewrite (optional) ─► hybrid retrieval (BM25 + de
 
 | Split | Source | Size | Labels |
 |---|---|---|---|
-| `gov` | USAspending.gov federal contracts | ~350 | NAICS from award record (audited subset) |
-| `messy` | Public purchase-card (P-card) transactions | ~150 | Hand-labeled by team |
+| `gov` | USAspending.gov federal contracts | 300 | NAICS from award record (audited subset) |
+| `messy` | Public purchase-card (P-card) transactions | 200 test + 100 dev | Hand-labeled by two team members |
 
 Metrics (reported per split):
 

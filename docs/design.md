@@ -6,7 +6,14 @@ How the system is engineered, organized around the proposal feedback.
 
 ## 1. One definition ↔ multiple codes
 
-Many-to-many relationships between text and codes need to be checked against the source files (`scripts/analyze_naics_overlap.py`, TODO). The places we expect them:
+Checked with `scripts/analyze_naics_overlap.py` (2026-10-28):
+
+- All 1,012 six-digit definitions are distinct, and **0 of 20,398** normalized index phrases map to more than one code. Definitions themselves are not ambiguous.
+- The ambiguity is on the query side: **1,076 of 17,778** index head nouns (text before the first comma) span several codes, e.g. *tapes* (11), *pipe*, *bags*, *boxes*, *furniture* (10 each). A two-word P-card line ("pipe", "bags") has the same problem.
+- 4,601 cross-references link neighboring codes.
+- EPA v1.3: 1,016 codes but only **281 distinct factor values** across 386 USEEIO sectors; 815 codes share a sector with another code. Factors range 0.029–3.924 kgCO2e/USD.
+
+Where this matters:
 
 | Source of overlap | Effect | Handling |
 |---|---|---|
@@ -49,8 +56,8 @@ Federal contract descriptions are cleaner and more structured than corporate exp
 
 | Split | Source | n | Labels |
 |---|---|---|---|
-| `gov` | USAspending contracts | ~350 | Award NAICS; **audit a 50-item sample** by hand (contracting officers sometimes pick codes for size-standard reasons) and report agreement |
-| `messy` | Public purchase-card transactions (merchant + short description) | ~150 | **Hand-labeled** NAICS-6 by ≥2 team members; report inter-annotator agreement (Cohen's κ) |
+| `gov` | USAspending contracts | 300 | Award NAICS; **audit a 50-item sample** by hand (contracting officers sometimes pick codes for size-standard reasons) and report agreement |
+| `messy` | Public purchase-card transactions (merchant + short description) | 200 test + 100 dev | **Hand-labeled** NAICS-6 by ≥2 team members; report inter-annotator agreement (Cohen's κ) |
 
 All metrics are reported per split. A terse, synthetic "corporate-style" rewrite of gov descriptions is a robustness check only — never the main messy set.
 

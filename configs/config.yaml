@@ -26,11 +26,12 @@ usaspending:
   fiscal_years: [2023, 2024]
   award_types: [A, B, C, D]   # contracts
   pool_size: 20000            # train/dev pool for few-shot + calibration
-  test_size: 350
+  test_size: 300
 
 pcard:
   source: data.ok.gov         # Oklahoma OMES purchase-card transactions
-  test_size: 150
+  dev_size: 100               # messy calibration split
+  test_size: 200
 
 eval_split_seed: 42
 
