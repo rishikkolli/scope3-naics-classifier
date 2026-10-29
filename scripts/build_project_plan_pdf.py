@@ -1,5 +1,8 @@
 """Render the 2-page project plan to docs/project_plan.pdf.
 
+Styled to match docs/GenAI_Project_Proposal.pdf: Times serif, black text, centered title and
+author line, bold unnumbered section headings, justified body.
+
 Edit the text below and re-run:  python scripts/build_project_plan_pdf.py
 Numbers quoted in the plan come from scripts/analyze_naics_overlap.py and a profile
 of data/raw (pulled 2026-10-22).
@@ -7,29 +10,40 @@ of data/raw (pulled 2026-10-22).
 from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 OUT = Path(__file__).resolve().parents[1] / "docs" / "project_plan.pdf"
 
-INK = colors.HexColor("#1b1f24")
-ACCENT = colors.HexColor("#1f5f8b")
-RULE = colors.HexColor("#c9d3dc")
-SHADE = colors.HexColor("#eef3f7")
+# Times New Roman (metric-compatible with the proposal's Liberation Serif); falls back to built-in Times.
+FONTS = Path("C:/Windows/Fonts")
+if (FONTS / "times.ttf").exists():
+    for name, file in [("Serif", "times.ttf"), ("Serif-Bold", "timesbd.ttf"),
+                       ("Serif-Italic", "timesi.ttf"), ("Serif-BoldItalic", "timesbi.ttf")]:
+        pdfmetrics.registerFont(TTFont(name, str(FONTS / file)))
+    pdfmetrics.registerFontFamily("Serif", normal="Serif", bold="Serif-Bold",
+                                  italic="Serif-Italic", boldItalic="Serif-BoldItalic")
+    SERIF, SERIF_BOLD = "Serif", "Serif-Bold"
+else:
+    SERIF, SERIF_BOLD = "Times-Roman", "Times-Bold"
 
-base = ParagraphStyle("base", fontName="Helvetica", fontSize=8.1, leading=9.9, textColor=INK)
-small = ParagraphStyle("small", parent=base, fontSize=7.5, leading=9.0)
-cell = ParagraphStyle("cell", parent=base, fontSize=7.4, leading=8.8)
-cellb = ParagraphStyle("cellb", parent=cell, fontName="Helvetica-Bold")
-h1 = ParagraphStyle("h1", parent=base, fontName="Helvetica-Bold", fontSize=13.5, leading=16,
-                    alignment=TA_CENTER, textColor=INK)
-sub = ParagraphStyle("sub", parent=base, fontSize=8.3, alignment=TA_CENTER, textColor=colors.HexColor("#4a5560"))
-h2 = ParagraphStyle("h2", parent=base, fontName="Helvetica-Bold", fontSize=9.3, leading=11,
-                    textColor=ACCENT, spaceBefore=5, spaceAfter=1.5)
-bullet = ParagraphStyle("bullet", parent=base, leftIndent=9, bulletIndent=1, spaceAfter=0.6)
+SIZE = 9.3          # body size; the proposal uses 11pt but this plan must fit two pages
+LEAD = SIZE * 1.2
+
+base = ParagraphStyle("base", fontName=SERIF, fontSize=SIZE, leading=LEAD, alignment=TA_JUSTIFY,
+                      textColor=colors.black, spaceAfter=2)
+cell = ParagraphStyle("cell", parent=base, fontSize=SIZE - 0.6, leading=(SIZE - 0.6) * 1.17, alignment=0,
+                      spaceAfter=0)
+cellb = ParagraphStyle("cellb", parent=cell, fontName=SERIF_BOLD)
+h1 = ParagraphStyle("h1", parent=base, fontName=SERIF_BOLD, fontSize=15, leading=18, alignment=TA_CENTER)
+sub = ParagraphStyle("sub", parent=base, fontSize=SIZE + 0.6, leading=LEAD + 1, alignment=TA_CENTER)
+h2 = ParagraphStyle("h2", parent=base, fontName=SERIF_BOLD, fontSize=SIZE + 0.9, leading=LEAD + 1,
+                    alignment=0, spaceBefore=4, spaceAfter=1.5)
 
 story = []
 
@@ -42,184 +56,161 @@ def P(text, style=base):
     story.append(Paragraph(text, style))
 
 
-def B(items):
-    for t in items:
-        story.append(Paragraph(t, bullet, bulletText="•"))
-
-
-def T(rows, widths, header=True):
-    data = [[Paragraph(c, cellb if (header and i == 0) else cell) for c in r] for i, r in enumerate(rows)]
-    t = Table(data, colWidths=[w * inch for w in widths], repeatRows=1 if header else 0)
-    style = [
+def T(rows, widths):
+    """Plain ruled table: rule above and below the header and below the last row."""
+    data = [[Paragraph(c, cellb if i == 0 else cell) for c in r] for i, r in enumerate(rows)]
+    t = Table(data, colWidths=[w * inch for w in widths], repeatRows=1)
+    t.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ("TOPPADDING", (0, 0), (-1, -1), 1.6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.6),
-    ]
-    if header:
-        style.append(("BACKGROUND", (0, 0), (-1, 0), SHADE))
-    t.setStyle(TableStyle(style))
+        ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.black),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.black),
+        ("LINEBELOW", (0, -1), (-1, -1), 0.8, colors.black),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
+    ]))
     story.append(t)
+    story.append(Spacer(1, 3))
 
 
 # ---------------------------------------------------------------- header
 P("Scope 3 Emissions Estimation from Procurement Text: Project Plan", h1)
-P("Rishik Kolli (rk5129) · Simranjeet Singh (xs2797) · Bineet Singh Chadha (bsc6177) · "
-  "NYU Generative AI · revised after proposal feedback", sub)
-story.append(Spacer(1, 3))
+P("Rishik Kolli (rk5129), Simranjeet Singh (xs2797), Bineet Singh Chadha (bsc6177)", sub)
+story.append(Spacer(1, 2))
 
-# ---------------------------------------------------------------- 1
-H("1. Refined problem and task")
-P("<b>Input:</b> one purchase record: free-text description, merchant/recipient, optional structured "
-  "field (P-card MCC or federal PSC), dollar amount, date. <b>Output:</b> (i) a NAICS-6 (2022) code, "
-  "(ii) emissions = spend in 2022 USD × EPA v1.3 factor (kgCO2e/USD, purchaser price), (iii) a confidence "
-  "score and an <b>accept / abstain</b> decision, with abstained items ranked for human review by "
-  "<i>expected emissions error</i>. Two changes from the proposal: abstention is now a <b>core</b> deliverable, "
-  "and evaluation mixes clean federal contracts with hand-labeled messy purchase-card data. Most of the effort "
-  "goes into retrieval quality, calibration and error analysis, not prompt wording.")
+H("Refined Problem and Task")
+P("Each input is a single purchase record: a free-text description, the merchant or recipient, an optional category "
+  "field (the merchant category code on a purchase card, or the product code on a federal contract), a dollar amount and "
+  "a date. For each record, the system assigns a 2022 NAICS-6 code and computes emissions by multiplying the spend, "
+  "converted to 2022 dollars, by the matching EPA v1.3 emission factor. It also reports how confident it is. When "
+  "confidence is low, the system abstains and sends the item to a human reviewer, and the review queue is ordered by how "
+  "much emissions error each item could cause. Two things have changed since the proposal. Abstention is now a core part "
+  "of the project rather than an extension, and the evaluation set now mixes clean federal contracts with messy "
+  "purchase-card data that we label ourselves. We plan to spend most of our effort on retrieval quality, calibration and "
+  "error analysis rather than on prompt wording.")
 
-# ---------------------------------------------------------------- feedback
-H("2. How the plan answers the proposal feedback")
+H("Response to Proposal Feedback")
+P("<b>Can one definition map to several codes?</b> We checked the Census files directly. All 1,012 six-digit definitions "
+  "are distinct, and none of the 20,398 index phrases maps to more than one code, so the definitions themselves are not "
+  "ambiguous. The ambiguity appears on the query side instead: 1,076 head nouns in the index span several codes (for "
+  "example, <i>pipe</i>, <i>bags</i> and <i>furniture</i> each appear under ten), and a two-word purchase line like "
+  "\"pipe\" inherits that problem. We will therefore index each phrase as its own chunk, combine scores by code, and show "
+  "the model the Census cross-references (\"except X, see code Y\") as hints about what a code is not. The mapping also "
+  "runs the other way: 1,016 codes share only 281 distinct EPA factors, so some wrong codes cost nothing in emissions. We "
+  "will report this as a separate factor-equivalent accuracy.")
+P("<b>How low will similarity scores be?</b> We expect cosine scores between short, messy text and long formal "
+  "definitions to be low and tightly bunched. A typical purchase-card line has two words, while a definition has 47. For "
+  "that reason we will never use a raw similarity score as a threshold or as a confidence signal. Our first experiment "
+  "measures the actual score distributions for correct and incorrect codes, and we will judge retrieval by whether the "
+  "right code appears in the top <i>k</i> results (recall@k). To close the gap in length and style, we will test short "
+  "index-phrase chunks, keyword (BM25) search alongside embeddings, LLM rewriting of the query, and a reranker.")
+P("<b>How will the dollar amount be used?</b> The amount has four roles. First, it drives the emissions estimate itself. "
+  "Second, it sets review priority: an item's priority is its spend times the chance that the code is wrong times the "
+  "spread of emission factors among the candidate codes, which matters because factors range from 0.03 to 3.92 kgCO2e "
+  "per dollar. Third, we will test it as a model input, since a $40 software line is probably a license while a $4M one "
+  "is probably custom development. Fourth, it needs careful handling: the purchase-card data includes 1,281 refunds, and "
+  "single federal awards reach $12.6B, which would dominate any summed error.")
+P("<b>Is the evaluation set too clean?</b> We agree that federal contracts are cleaner than corporate expense data. The "
+  "test set will contain 300 federal contracts and 200 hand-labeled purchase-card transactions, and every result will be "
+  "reported separately for each. We will also set aside 100 labeled purchase-card rows for calibration, so the abstention "
+  "threshold is not tuned on clean data alone.")
+
+H("Simplest Credible Baselines")
+P("We will compare against four baselines. The simplest takes the top result from search over the NAICS text, with no "
+  "language model at all. The second is a TF-IDF and logistic regression classifier trained on about 6,400 labeled federal "
+  "contracts, which tells us whether generative AI is needed in the first place. The third is the zero-shot LLM from our "
+  "proposal. For purchase-card data only, the fourth is a hand-built mapping from the most common merchant categories to "
+  "NAICS codes.")
+
+H("Proposed Architecture")
+P("The system first cleans each description by removing contract boilerplate and, optionally, asking an LLM to rewrite it "
+  "in plain language. It then searches a corpus of NAICS titles, definitions, index phrases and cross-references using "
+  "both embeddings (e5 or bge) and keyword search, merges the two rankings, groups results by code and reranks the top 50. "
+  "The merchant or product category can give a small boost to related codes, following the metadata-filtered RAG pattern "
+  "from week 7. An LLM then picks one code from the top candidates, guided by similar labeled examples, and returns its "
+  "choice, a short rationale and a confidence score as JSON. We estimate confidence from four signals: agreement across "
+  "five sampled answers, the probability of the chosen code, the score gap between the top two candidates, and the "
+  "model's stated confidence. A logistic regression fit on held-out data combines them. Finally, the code is mapped to "
+  "the 2017 codes that the EPA factors use. Every stage logs its inputs and outputs, so we can trace each error to the "
+  "step that caused it.")
+
+H("Evaluation Dataset and Test Cases")
 T([
-    ["Feedback", "What we found or will do"],
-    ["1. Can one definition map to several codes?",
-     "<b>Checked on the Census files.</b> Every 6-digit definition is unique (1,012 codes), and none of the 20,398 "
-     "index phrases maps to more than one code. The many-to-many problem is on the <i>query</i> side: "
-     "1,076 head nouns span several codes (<i>pipe, bags, boxes, furniture</i>: 10 codes each), and 4,601 "
-     "cross-references (\"…except X, see 3329xx\") link neighboring codes. We index each index phrase as its own "
-     "chunk, <b>aggregate scores by code</b>, and show the LLM cross-refs as \"not this code\" hints. In the other "
-     "direction, EPA factors collapse 1,016 codes into <b>281 distinct factor values</b>, so we also report "
-     "<i>factor-equivalent</i> accuracy."],
-    ["2. Similarity between messy text and formal definitions is low; what is retrieval quality?",
-     "We expect low, compressed cosine scores, so <b>we will never threshold on raw similarity or use it as confidence</b>. "
-     "Experiment E1 measures the score distribution (gold vs. top non-gold) per split and chunk type, and judges "
-     "retrieval by <b>recall@k</b> (k = 1–50). P-card text has a median of <b>2 words</b> vs. 47 for a definition, so "
-     "we add short index-phrase chunks, BM25 hybrid search, LLM query rewriting and a cross-encoder reranker (E2)."],
-    ["3. How is the dollar amount used?",
-     "(a) Emissions after deflating to 2022 USD. (b) <b>Review priority</b> = spend × P(wrong) × factor spread across "
-     "top candidates (factors range 0.03–3.92 kgCO2e/$, 135×). (c) A tested input feature (a $40 vs. $4M "
-     "\"software\" line is a license vs. custom development). (d) Data handling: 1,281 negative P-card rows "
-     "(refunds), and awards up to $12.6B that would dominate a summed error."],
-    ["4. Gov data is too clean",
-     "Test set = <b>300 gov + 200 hand-labeled P-card</b> rows, every metric reported per split. Calibration uses a "
-     "separate 100-row messy dev split, so the abstention threshold is not fit only on clean data."],
-], [1.55, 5.75])
+    ["Split", "Source", "Size", "Labels and purpose"],
+    ["gov_pool", "USAspending FY2024 contracts (6,900 pulled across 23 sectors)", "~6,400",
+     "Award NAICS codes; used for few-shot examples, the supervised baseline and calibration"],
+    ["gov_test", "USAspending, stratified by sector and held out", "300",
+     "Award NAICS codes; we re-label 50 blind to check them"],
+    ["messy_dev, messy_test", "Oklahoma purchase cards, July 2024, stratified by category", "100, 200",
+     "Two of us label each row and the third settles disagreements; we report Cohen's κ"],
+    ["challenge", "Hand-picked from both sources", "~40", "The edge cases below, re-run after every change"],
+], [1.25, 2.6, 0.55, 2.5])
 
-# ---------------------------------------------------------------- 3
-H("3. Simplest credible baselines")
-B([
-    "<b>B0 Retrieval only:</b> top-1 code from BM25 / dense search over NAICS text, with no LLM. This is the floor the LLM must beat.",
-    "<b>B1 Supervised:</b> TF-IDF + logistic regression trained on ~6,400 USAspending (description, NAICS) pairs. "
-    "This tests whether generative AI is needed at all.",
-    "<b>B2 Zero-shot LLM:</b> description → NAICS-6 directly (the proposal's baseline). <b>B3 MCC lookup</b> (messy only): "
-    "hand map of the most common MCC categories to NAICS.",
-])
+H("Success Metrics and Evaluation Methodology")
+P("Our main metric is emissions error: the total absolute difference between predicted and true kgCO2e, divided by the "
+  "true total. Because a few very large awards could dominate that number, we will also report the per-item median. "
+  "Secondary metrics are accuracy at the 2-, 4- and 6-digit levels, factor-equivalent accuracy, recall@k for retrieval, "
+  "and cost and latency per item. For abstention, we will measure how well confidence separates right from wrong answers "
+  "(AUROC), the error rate at each level of coverage (the risk-coverage curve and its area), calibration error (ECE), and "
+  "emissions error when the system keeps 70, 80 or 90 percent of items. To show that confidence tracks what is actually "
+  "wrong, we will check on the hand-labeled data whether low model confidence lines up with items where our annotators "
+  "disagreed, and whether the system abstains on items that we marked as unknowable. All comparisons will include 95% "
+  "bootstrap confidence intervals. We will consider the project successful if it beats the supervised and zero-shot "
+  "baselines on emissions error for both data types and reaches an AUROC of at least 0.75 on the purchase-card test set.")
 
-# ---------------------------------------------------------------- 4
-H("4. Proposed architecture")
-P("<font face='Courier' size='7.4'>record → normalize (strip contract boilerplate, expand abbreviations) → [query rewrite] → "
-  "hybrid retrieval over chunks {title, definition, index phrase, cross-ref} → aggregate by code → rerank top-50 → "
-  "LLM selects among top-k with retrieved few-shot examples → confidence signals → accept / abstain → "
-  "2022→2017 concordance → emissions</font>")
-B([
-    "<b>Corpus</b> (<font face='Courier'>src/naics_corpus.py</font>): ~1,012 codes × (title + definition + ~13 index phrases) plus cross-refs. "
-    "<b>Retriever</b> (<font face='Courier'>src/retrieval.py</font>): e5/bge with query/passage prefixes + BM25, fused with reciprocal rank fusion. "
-    "MCC/PSC used as a soft metadata boost (the metadata-filtered RAG pattern from week 7), tested as an ablation.",
-    "<b>Selector</b> (<font face='Courier'>src/classify.py</font>): structured JSON output {code, rationale, confidence}; few-shot examples are "
-    "nearest neighbors from the gov pool. <b>Confidence</b> (<font face='Courier'>src/confidence.py</font>): self-consistency over 5 samples, "
-    "code log-probability, top-1/top-2 retrieval margin, verbalized confidence, and a logistic-regression combination fit on dev data. "
-    "<b>Emissions</b> (<font face='Courier'>src/emissions.py</font>): map 2022 codes to 2017 factors via the concordance; 1→many splits use the mean factor and are flagged.",
-    "Every stage logs its inputs and outputs per item (candidates, gold rank, samples, tokens, latency), so each error "
-    "can be traced to the stage that caused it.",
-])
+H("Outcome vs. Trajectory Evaluation")
+P("Outcome evaluation asks whether the final code, emissions estimate and abstain decision are right. Trajectory "
+  "evaluation asks where things went wrong along the way, following the logging approach from the week 8 agent "
+  "assignment. For each item we will check whether the correct code was retrieved and at what rank, whether query "
+  "rewriting helped or hurt, whether the LLM picked the correct code when it was available, and whether the confidence "
+  "score flagged the mistake. This lets us assign every error to retrieval, selection, label noise or a missed abstention, "
+  "and report each category by count and by its share of emissions error. If we build the agentic stretch version, we "
+  "will also look at how many tool calls it makes and how many of them are wasted.")
 
-# ---------------------------------------------------------------- 5
-H("5. Evaluation data and test cases")
-T([
-    ["Split", "Source", "n", "Labels / purpose"],
-    ["gov_pool", "USAspending FY2024 (have 6,900; 23 sectors × 300)", "~6,400", "Few-shot pool, B1 training, gov calibration dev"],
-    ["gov_test", "USAspending, sector-stratified, held out", "300",
-     "Award NAICS; <b>50 audited blind</b> by the team (officers sometimes choose codes for size-standard reasons)"],
-    ["messy_dev / messy_test", "OK P-card, July 2024 (34,138 rows), stratified by MCC", "100 / 200",
-     "<b>Hand-labeled by 2 annotators</b>, adjudicated by the third; Cohen's κ at 2/4/6 digits; annotator confidence recorded"],
-    ["challenge", "Curated from both sources", "~40", "Unit-style cases for the edge cases in §8; run on every change"],
-], [1.05, 2.45, 0.6, 3.2])
+H("Important Edge Cases")
+P("The biggest challenge in the purchase-card data is that 39% of rows have no useful description, such as \"GENERAL "
+  "PURCHASE\" or \"PAYMENT ON ACCOUNT\". For these, the system has to rely on the merchant and category and should usually "
+  "abstain. Another 18% of rows are Amazon purchases, where the merchant category says little about what was bought, and "
+  "purchases from retailers like Walmart should be coded to the industry that made the product, not the store. Some lines "
+  "combine several items or are cut off mid-word (\"Hea PCE\"). Federal descriptions bring their own problems, including "
+  "contract-number boilerplate, a few nearly empty descriptions, and labels that mix 2017 and 2022 NAICS codes. Across "
+  "both sources we also need to handle refunds, very large awards, and items like software or HVAC where the line between "
+  "a good and a service is unclear.")
 
-# ---------------------------------------------------------------- 6
-H("6. Success metrics and methodology")
-B([
-    "<b>Primary:</b> emissions error, Σ|kgCO2e<sub>pred</sub> − kgCO2e<sub>true</sub>| / Σ kgCO2e<sub>true</sub>, plus a "
-    "per-item median so a few $1B awards do not decide the result. <b>Secondary:</b> accuracy at 2/4/6 digits, factor-equivalent "
-    "accuracy, retrieval recall@k, and cost and latency per item.",
-    "<b>Abstention (core):</b> AUROC of confidence for predicting a wrong answer; risk–coverage curve and AURC; ECE with a reliability diagram; "
-    "emissions error at 70/80/90% coverage. <b>Does confidence track real errors?</b> On the human-labeled messy set we also report "
-    "the Spearman correlation between model confidence and annotator agreement, and the share of human-marked UNKNOWN rows the system abstains on.",
-    "All comparisons use 95% bootstrap CIs and paired bootstrap tests on the same items. Success means beating B1/B2 on emissions error on "
-    "<i>both</i> splits, and AUROC ≥ 0.75 on messy_test.",
-])
+H("Planned Experiments and Comparisons")
+P("We plan six experiments. The first measures similarity score distributions. The second adds retrieval improvements one "
+  "at a time and tracks recall@k: query prefixes, index-phrase chunks, keyword search, query rewriting, reranking and the "
+  "category boost. The third compares the baselines with retrieval-augmented classification, with and without few-shot "
+  "examples, the dollar amount and the category field, and at different numbers of candidates. The fourth compares "
+  "confidence signals on their own and combined, and calibrated on clean versus messy data. The fifth compares ordering "
+  "the review queue by probability of error against ordering it by expected emissions error. As a stretch, the sixth "
+  "compares small and large models.")
 
-# ---------------------------------------------------------------- 7
-H("7. Outcome vs. trajectory evaluation")
-P("<b>Outcome:</b> final code, emissions and the accept/abstain decision (§6). <b>Trajectory:</b> the pipeline is a fixed chain, "
-  "so we score each stage, following the trajectory logging from the week 8 agent assignment. Was the gold code retrieved (gold rank)? "
-  "Did query rewriting move it up or down? Given that it was in the top-k, did the LLM pick it? Did confidence flag the miss? This splits "
-  "every error into <b>retrieval miss / selection error / label noise / missed abstention</b>, with each category reported by count and by share "
-  "of emissions error. If the stretch agentic variant is built (the LLM can re-query or walk the NAICS hierarchy), we also score tool-call "
-  "count and redundant steps.")
+H("Core and Stretch Goals")
+P("Our core goals are the NAICS corpus and overlap analysis, the hybrid retriever and its ablations, the baselines and the "
+  "retrieval-augmented classifier, confidence-based abstention with full calibration metrics, 300 double-labeled "
+  "purchase-card rows, and an error analysis broken down by stage and weighted by emissions. Our stretch goals are an "
+  "embedding model fine-tuned on federal contract data, a small LoRA-tuned classifier (building on week 9), hierarchical "
+  "classification from 2 to 4 to 6 digits, an agent that can re-run searches, and a simple demo of the review queue.")
 
-# ---------------------------------------------------------------- 8
-H("8. Important edge cases")
-T([
-    ["Case", "Evidence in our data", "Handling"],
-    ["No product signal", "39% of P-card rows are GENERAL PURCHASE / PAYMENT ON ACCOUNT", "Fall back to merchant + MCC; expected to abstain; label UNKNOWN if unknowable"],
-    ["Retailer ≠ producer", "18% of P-card rows are Amazon; Walmart and Sam's Club also common", "Label the producing industry; the MCC is often misleading"],
-    ["Multi-item / truncated", "\"PATIO RENTAL…|MEAL VOUCHERS\", \"Hea PCE\"", "Dominant-dollar item; rewrite step expands abbreviations"],
-    ["Refunds, extreme spend", "1,281 negative rows; awards up to $12.6B", "Net refunds against purchases; report per-item and dollar-weighted error"],
-    ["Contract boilerplate", "\"CONTRACT W58RGZ-17-D-0055, TASK ORDER…\"; 11 near-empty", "Strip IDs; empty text must abstain"],
-    ["Goods vs. services; NAICS 2017↔2022", "\"software\", \"HVAC\"; mixed code versions in labels", "Amount as feature; concordance with split flags"],
-], [1.45, 3.0, 2.85])
+H("Team Ownership and Division of Work")
+P("Rishik will own the NAICS corpus, the overlap analysis, the retrieval experiments and the data pipeline. Simranjeet "
+  "will own the LLM classifier, few-shot examples, query rewriting, the emissions calculation and the baselines. Bineet "
+  "will own the confidence signals, abstention, and the evaluation harness and statistics. Labeling is shared: each of us "
+  "will label about 200 purchase-card rows so that every row gets two independent labels, Rishik will settle "
+  "disagreements, and Simranjeet and Bineet will split the 50-row federal audit. Each of us will write the error analysis "
+  "for the part of the system we own.")
 
-# ---------------------------------------------------------------- 9
-H("9. Planned experiments")
-B([
-    "<b>E1 Similarity:</b> cosine distributions for gold vs. hardest negative, per split and chunk type. <b>E2 Retrieval ablations</b> (recall@k): "
-    "dense → asymmetric prefixes → + index chunks → + BM25 hybrid → + rewrite → + rerank → + MCC/PSC boost.",
-    "<b>E3 Classifier stages:</b> B0–B3 vs. RAG vs. RAG + few-shot; k ∈ {5, 10, 20}; with and without amount and structured field. "
-    "<b>E4 Confidence:</b> each signal alone vs. combined; calibrated on gov-dev vs. messy-dev. <b>E5 Review queue:</b> abstain by P(wrong) vs. "
-    "by expected emissions error (emissions error recovered per item reviewed). <b>E6 (stretch):</b> small vs. large model.",
-])
+H("Next Steps")
+P("In the first week, we will freeze the data splits, draw the purchase-card sample, label 30 rows together to agree on "
+  "the guidelines, and build the corpus. In the second week, we will run the retrieval experiments and the first "
+  "baselines and finish the first round of labeling. The third week covers the retrieval-augmented classifier, the rest "
+  "of the labeling and the federal audit. The fourth week is for confidence and abstention, and the fifth is for error "
+  "analysis, stretch goals and the final report.")
 
-# ---------------------------------------------------------------- 10
-H("10. Core and stretch goals")
-P("<b>Core:</b> NAICS corpus and overlap report; hybrid retriever with E1/E2; B0–B3 and the RAG + few-shot classifier; "
-  "<b>confidence-based abstention with AUROC, AURC and ECE</b>; 300 double-labeled P-card rows with κ; stage-attributed error analysis weighted by emissions. "
-  "<b>Stretch:</b> contrastively fine-tuned embedder on gov_pool pairs; LoRA-tuned small selector model (week 9); hierarchical "
-  "(2→4→6 digit) classification; agentic re-query; a small review-queue demo.")
-
-# ---------------------------------------------------------------- 11
-H("11. Team ownership (proposed)")
-T([
-    ["Member", "Owns", "Also"],
-    ["Rishik Kolli", "Corpus, overlap report, retriever, E1/E2, repo and data pipeline", "Labels messy rows; adjudicates Bineet/Simranjeet disagreements"],
-    ["Simranjeet Singh", "LLM selector, few-shot, query rewrite, emissions module, B1–B3, E3/E6", "Labels messy rows; gov audit (25)"],
-    ["Bineet Singh Chadha", "Confidence signals, abstention, eval harness and bootstrap, E4/E5", "Labels messy rows; gov audit (25)"],
-], [1.25, 3.7, 2.35])
-P("Labeling load: 300 messy rows × 2 labels = 600 labels, about 200 per person, plus the 50-row gov audit. "
-  "Everyone writes the error-analysis section for their own stage.", small)
-
-# ---------------------------------------------------------------- 12
-H("12. Next steps")
-B([
-    "<b>Week 1:</b> freeze splits (<font face='Courier'>scripts/build_splits.py</font>); draw the 300-row P-card sample; label 30 rows together to align on guidelines; build the corpus.",
-    "<b>Week 2:</b> E1 + E2 retrieval ablations; B0–B2 on gov_test; first labeling round with κ. "
-    "<b>Week 3:</b> RAG + few-shot (E3); finish labeling; gov audit. <b>Week 4:</b> confidence and abstention (E4/E5). "
-    "<b>Week 5:</b> error analysis, stretch goals, report.",
-])
-
-doc = SimpleDocTemplate(str(OUT), pagesize=letter, leftMargin=0.6 * inch, rightMargin=0.6 * inch,
-                        topMargin=0.5 * inch, bottomMargin=0.5 * inch,
+doc = SimpleDocTemplate(str(OUT), pagesize=letter, leftMargin=0.75 * inch, rightMargin=0.75 * inch,
+                        topMargin=0.6 * inch, bottomMargin=0.6 * inch,
                         title="Scope 3 NAICS Classifier: Project Plan",
                         author="Rishik Kolli, Simranjeet Singh, Bineet Singh Chadha")
 doc.build(story)
