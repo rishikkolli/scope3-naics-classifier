@@ -26,7 +26,11 @@ Deliverable: a table of (a) # index phrases mapping to >1 code, (b) # NAICS-6 co
 
 ## 2. Similarity scores and retrieval quality
 
-Short messy queries vs. long formal definitions produce **low, compressed cosine scores** (we expect a narrow band; to be measured). Absolute similarity is therefore not meaningful — **rank** is. So:
+Short messy queries vs. long formal definitions produce **compressed, uninformative cosine
+scores** — now measured (E1, gov_test, e5-base-v2): the gold code's best chunk averages
+cosine 0.800 (p10–p90: 0.763–0.837) while the best *non-gold* chunk averages 0.825; the
+mean margin is **negative** (−0.024) and the gold code outscores all others on raw cosine
+only 17% of the time. Absolute similarity is therefore not meaningful — **rank** is. So:
 
 - **Measure retrieval with recall@k** on labeled data (k ∈ {1, 5, 10, 20, 50}); choose k from the recall curve.
 - **Never use raw similarity as a confidence score.** Use rank margins (top-1 vs top-2 gap) only as one calibrated signal.

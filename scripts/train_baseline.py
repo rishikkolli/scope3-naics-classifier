@@ -80,7 +80,8 @@ def s0b_tfidf_logreg(pool, test, lookup: FactorLookup) -> None:
 
 def s0a_retrieval_top1(test, lookup: FactorLookup) -> None:
     """B0 from the best completed R-series run file."""
-    for run in ["R4_hybrid_rrf", "R2_dense_e5", "R1_bm25_all_chunks"]:
+    # frozen retriever = R2 dense: best recall@1 (0.150 vs hybrid 0.114) and best @50
+    for run in ["R2_dense_e5", "R4_hybrid_rrf", "R1_bm25_all_chunks"]:
         f = RUNS / f"{run}.json"
         if f.exists():
             data = json.loads(f.read_text())
