@@ -10,6 +10,7 @@ Retrieval scores are aggregated *by code* downstream, so many chunks per code is
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,31 +25,71 @@ class Chunk:
     text: str
 
 
+def _clean(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s)).strip()
+
+
 def load_codes(raw_dir: Path) -> pd.DataFrame:
     """2-6 digit code list -> DataFrame[naics, title, level]."""
-    raise NotImplementedError
+    df = pd.read_excel(raw_dir / "naics" / "2-6 digit_2022_Codes.xlsx", dtype=str)
+    df = df.rename(columns={"2022 NAICS US   Code": "naics", "2022 NAICS US Title": "title"})
+    df = df.dropna(subset=["naics"])
+    df["naics"] = df["naics"].str.replace(r"\.0$", "", regex=True).str.strip()
+    # Census marks some titles with a trailing "T" footnote
+    df["title"] = df["title"].map(_clean).str.replace(r"T$", "", regex=True).str.strip()
+    df = df[df["naics"].str.fullmatch(r"\d{2,6}")]
+    df["level"] = df["naics"].str.len()
+    return df[["naics", "title", "level"]].reset_index(drop=True)
 
 
 def load_descriptions(raw_dir: Path) -> pd.DataFrame:
-    raise NotImplementedError
+    """6-digit code -> title + definition text (cross-reference tail stripped)."""
+    df = pd.read_excel(raw_dir / "naics" / "2022_NAICS_Descriptions.xlsx", dtype=str)
+    df["Code"] = df["Code"].str.strip()
+    df = df[df["Code"].str.fullmatch(r"\d{6}")].copy()
+    def strip_xref(text: str) -> str:
+        return _clean(re.split(r"Cross-References\.", str(text))[0])
+    df["definition"] = df["Description"].map(strip_xref)
+    df["title"] = df["Title"].map(_clean).str.replace(r"T$", "", regex=True).str.strip()
+    return df.rename(columns={"Code": "naics6"})[["naics6", "title", "definition"]].reset_index(drop=True)
 
 
 def load_index_entries(raw_dir: Path) -> pd.DataFrame:
-    raise NotImplementedError
+    df = pd.read_excel(raw_dir / "naics" / "2022_NAICS_Index_File.xlsx", dtype=str)
+    df = df.rename(columns={"NAICS22": "naics6", "INDEX ITEM DESCRIPTION": "text"})
+    df["naics6"] = df["naics6"].str.strip()
+    df = df[df["naics6"].str.fullmatch(r"\d{6}")].copy()
+    df["text"] = df["text"].map(_clean)
+    return df[["naics6", "text"]].reset_index(drop=True)
 
 
 def load_cross_references(raw_dir: Path) -> pd.DataFrame:
-    raise NotImplementedError
+    df = pd.read_excel(raw_dir / "naics" / "2022_NAICS_Cross_References.xlsx", dtype=str)
+    df = df.rename(columns={"Code": "naics6", "Cross-Reference": "text"})
+    df["naics6"] = df["naics6"].str.strip()
+    df = df[df["naics6"].str.fullmatch(r"\d{6}")].copy()
+    df["text"] = df["text"].map(_clean)
+    return df[["naics6", "text"]].reset_index(drop=True)
 
 
-def build_chunks(raw_dir: Path) -> list[Chunk]:
-    raise NotImplementedError
+def build_chunks(raw_dir: Path, include_crossrefs: bool = False) -> list[Chunk]:
+    """All retrievable chunks. Cross-refs are off by default: they describe what a code
+    is NOT, so they are shown to the LLM as hints rather than retrieved as evidence."""
+    chunks: list[Chunk] = []
+    desc = load_descriptions(raw_dir)
+    for _, r in desc.iterrows():
+        chunks.append(Chunk(f"t_{r.naics6}", r.naics6, "title", r.title))
+        if r.definition:
+            chunks.append(Chunk(f"d_{r.naics6}", r.naics6, "definition", f"{r.title}. {r.definition}"))
+    for i, r in load_index_entries(raw_dir).iterrows():
+        chunks.append(Chunk(f"i_{i}", r.naics6, "index", r.text))
+    if include_crossrefs:
+        for i, r in load_cross_references(raw_dir).iterrows():
+            chunks.append(Chunk(f"x_{i}", r.naics6, "crossref", r.text))
+    return chunks
 
 
-def overlap_report(raw_dir: Path) -> dict:
-    """Quantify one-to-many mappings (feedback item 1):
-    - index phrases (normalized) mapping to >1 NAICS-6
-    - definitions sharing near-duplicate text
-    - cross-reference fan-out per code
-    """
-    raise NotImplementedError
+def crossref_hints(raw_dir: Path) -> dict[str, list[str]]:
+    """naics6 -> its cross-reference sentences, for the LLM prompt."""
+    xr = load_cross_references(raw_dir)
+    return xr.groupby("naics6")["text"].apply(list).to_dict()

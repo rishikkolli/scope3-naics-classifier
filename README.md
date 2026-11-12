@@ -66,3 +66,18 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # add API keys
 ```
+
+## Running the pipeline
+
+Improvements are added **incrementally in priority order** (R1→R8 retrieval, C1→C5
+confidence, S0→S4 classifier stages — see `docs/design.md`); every run writes a frozen
+`eval/runs/<run_id>.json` so each gain is attributable to one technique.
+
+```bash
+python scripts/build_splits.py          # freeze gov_test/gov_pool + messy labeling sheet
+python scripts/analyze_naics_overlap.py # one-to-many report (design.md s1)
+python scripts/run_retrieval_eval.py    # R1-R4 recall@k ablations + E1 similarity study
+python scripts/train_baseline.py        # S0a retrieval-top1 + S0b TF-IDF/logreg (training)
+python scripts/run_classifier.py --stage S1 --limit 50   # LLM stages (needs .env key)
+python scripts/score_run.py S1          # metrics for a saved LLM run
+```

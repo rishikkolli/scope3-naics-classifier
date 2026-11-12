@@ -56,7 +56,7 @@ def messy_sample() -> None:
         for annotator in next(pairs):
             rows.append({"item_id": f"pcard_{r['ROWID']}", "split": r["split"], "description": r["ITEM_DESCR"],
                          "merchant": r["MERCHANT"], "mcc": r["MCC_DESCRIPTION"], "amount_usd": r["AMOUNT"],
-                         "annotator": annotator, "naics6": "", "naics6_alt": "", "confidence": "",
+                         "annotator": annotator, "naics6": "", "naics6_alt": "", "evidence": "", "confidence": "",
                          "ambiguity_reason": "", "notes": ""})
     dest = ROOT / CFG["paths"]["labeled"] / "messy_to_label.csv"
     pd.DataFrame(rows).to_csv(dest, index=False)

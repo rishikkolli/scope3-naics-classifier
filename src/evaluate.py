@@ -5,8 +5,23 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 
 
+UNKNOWN = "UNKNOWN"
+
+
 def hierarchical_accuracy(gold: list[str], pred: list[str], digits: int) -> float:
-    return float(np.mean([g[:digits] == p[:digits] for g, p in zip(gold, pred)]))
+    """Over answerable rows only; UNKNOWN-gold rows never enter the denominator
+    (design.md section 7). Partial-evidence gold prefixes score at their own length."""
+    pairs = [(g, p) for g, p in zip(gold, pred) if g != UNKNOWN]
+    if not pairs:
+        return float("nan")
+    return float(np.mean([g[:digits] == p[:digits] for g, p in pairs if len(g) >= digits]))
+
+
+def abstention_recall(gold: list[str], abstained: np.ndarray) -> float:
+    """Share of unanswerable (gold=UNKNOWN) items the system abstained on —
+    the only correct behavior for them."""
+    mask = np.array([g == UNKNOWN for g in gold])
+    return float(abstained[mask].mean()) if mask.any() else float("nan")
 
 
 def factor_equivalent_accuracy(gold, pred, group_of) -> float:

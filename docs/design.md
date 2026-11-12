@@ -32,15 +32,20 @@ Short messy queries vs. long formal definitions produce **low, compressed cosine
 - **Never use raw similarity as a confidence score.** Use rank margins (top-1 vs top-2 gap) only as one calibrated signal.
 - Plot the similarity distribution for correct vs. incorrect top-1 retrievals.
 
-Ablations (each reported as recall@k):
+Ablations in **strict priority order** (milestone-2 feedback: if time runs out, the bottom
+of the list is dropped, never the top). Each is added *on top of* the previous one and
+reported as recall@k, so any gain is attributable to exactly one technique:
 
-1. Dense embeddings of NAICS definitions (baseline)
-2. Asymmetric embedding model with query/passage prefixes (e5 / bge)
-3. Index-entry chunks in addition to definitions (shorter docs ≈ closer to query length)
-4. Hybrid BM25 + dense (reciprocal rank fusion)
-5. LLM query rewriting ("dell lat 5540 x10" → "laptop computers")
-6. Cross-encoder reranking of top-50
-7. *(stretch)* Contrastively fine-tuned embedder on USAspending (description, code) pairs
+| Priority | Technique | Rationale for its rank |
+|---|---|---|
+| R1 | BM25 over all chunk types | zero-cost floor; exact-word matches matter for product nouns |
+| R2 | Dense, asymmetric prefixes (e5 `query:`/`passage:`) | biggest expected jump; built for short→long matching |
+| R3 | Index-entry chunks + score aggregation by code | closes the query/document length gap (2 vs 47 words) |
+| R4 | Hybrid BM25 + dense (reciprocal rank fusion) | cheap once R1+R2 exist |
+| R5 | LLM query rewriting of messy descriptions | needs API budget; helps mainly the messy split |
+| R6 | Cross-encoder reranking of top-50 | latency cost; only worth it if R1–R4 recall plateaus below target |
+| R7 | MCC/PSC soft metadata boost | split-specific, smaller expected gain |
+| R8 *(stretch)* | Contrastively fine-tuned embedder on USAspending pairs | largest effort, needed only if R2–R6 underdeliver |
 
 ## 3. Using the dollar amount
 
@@ -63,13 +68,16 @@ All metrics are reported per split. A terse, synthetic "corporate-style" rewrite
 
 ## 5. Confidence-based abstention (mandatory)
 
-**Confidence signals** (per item):
+**Confidence signals** (per item), in **strict priority order** — implemented top-down,
+lowest priorities dropped first if time runs out:
 
-- Self-consistency: agreement rate across N sampled predictions
-- Token log-probability of the chosen code
-- Retrieval margin: score gap between the top two candidate codes
-- Verbalized confidence (0–100)
-- Combined: logistic regression over the above, fit on a dev split
+| Priority | Signal | Rationale for its rank |
+|---|---|---|
+| C1 | Self-consistency: agreement rate across N sampled predictions | strongest known signal; no extra plumbing |
+| C2 | Retrieval margin: score gap between the top two candidate codes | free — computed during retrieval |
+| C3 | Verbalized confidence (0–100) | one extra JSON field in the same call |
+| C4 | Combined: logistic regression over C1–C3 (+C5 if present), fit on `messy_dev` | the headline deliverable; needs C1–C3 first |
+| C5 | Token log-probability of the chosen code | provider-dependent (logprobs not always exposed); add last |
 
 **Metrics** — does confidence identify what is truly wrong?
 
@@ -88,10 +96,46 @@ Every stage logs per-item outputs so errors can be categorized:
 
 Each category is reported by count **and** by share of total emissions error.
 
-## Stages
+## Stages: baseline first, one change per run
 
-1. Zero-shot baseline (LLM → NAICS-6 directly)
-2. Retrieval-augmented (choose among top-k)
-3. + Few-shot examples retrieved from training data
-4. + Confidence and abstention
-5. *(stretch)* hierarchical classification; small vs. large vs. fine-tuned model comparison
+Milestone-2 feedback: establish the baseline first, then add improvements **one at a time**,
+so every gain is attributable to a specific technique. Each run writes a frozen result file
+`eval/runs/<run_id>.json` (config + per-item outputs + metrics); run N is always compared
+against run N−1 on the same items.
+
+| Run | System | What the delta measures |
+|---|---|---|
+| S0a | B0 retrieval-only (best retriever's top-1 code, no LLM) | floor |
+| S0b | B1 TF-IDF + logistic regression on gov_pool | is generative AI needed at all? |
+| S0c | B2 zero-shot LLM | parametric knowledge alone |
+| S1 | + retrieval: LLM chooses among top-k (frozen retriever from R-series) | value of grounding in NAICS text |
+| S2 | + few-shot neighbors from gov_pool | value of labeled examples |
+| S3 | + amount & MCC/PSC in the prompt | value of structured context |
+| S4 | + confidence & abstention (C-series) | selective-prediction value |
+| S5 *(stretch)* | hierarchical; small vs. large model | — |
+
+The retriever is tuned first (R1–R8, frozen before S1); S1–S4 then never touch retrieval,
+so classifier deltas are never confounded with retrieval changes.
+
+## 7. Low-information items: insufficient evidence ≠ wrong prediction
+
+Milestone-2 feedback: for purchase descriptions with little information (39% of P-card rows
+are "GENERAL PURCHASE" etc.), distinguish *incorrect predictions* from *items where the
+information is insufficient for a reliable classification*.
+
+**Labeling.** Annotators assign one of three evidence levels (see labeling guidelines):
+`sufficient` (codeable from description+merchant+MCC), `partial` (codeable only to 2–4
+digits; record the finest honest prefix), `insufficient` (`naics6=UNKNOWN`). UNKNOWN rows
+are kept — they are the abstention test set, not noise.
+
+**Scoring.** Three-way outcome per item:
+- *correct* — prediction matches gold (at the digit level being scored);
+- *wrong* — evidence was sufficient and the system still erred (a real model failure);
+- *unanswerable* — gold is UNKNOWN: the only correct behavior is to abstain.
+
+Accuracy is computed over sufficient-evidence rows only; UNKNOWN rows are scored as
+**abstention recall** (share of unanswerable items the system abstained on) and never enter
+the accuracy denominator. `partial` rows are scored at their honest digit level. The error
+analysis then separates "model picked a wrong code" from "nobody could have known," and the
+confidence study (§5) checks that low confidence concentrates on both wrong *and*
+unanswerable items.

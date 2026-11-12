@@ -16,10 +16,18 @@ def retrieval_margin(scores: list[float]) -> float:
     return float(scores[0] - scores[1]) if len(scores) > 1 else 0.0
 
 
-def combine(features: np.ndarray, model=None) -> np.ndarray:
-    """Logistic regression over [self_consistency, logprob, margin, verbal_conf],
-    fit on the dev split to predict correctness."""
-    raise NotImplementedError
+def fit_combiner(features: np.ndarray, correct: np.ndarray):
+    """C4: logistic regression over [self_consistency, margin, verbal_conf(, logprob)],
+    fit on the dev split to predict correctness. Returns the fitted model."""
+    from sklearn.linear_model import LogisticRegression
+    model = LogisticRegression(max_iter=1000)
+    model.fit(features, correct.astype(int))
+    return model
+
+
+def combine(features: np.ndarray, model) -> np.ndarray:
+    """P(correct) from a combiner fit by fit_combiner."""
+    return model.predict_proba(features)[:, 1]
 
 
 def abstain(conf: np.ndarray, coverage: float) -> np.ndarray:
