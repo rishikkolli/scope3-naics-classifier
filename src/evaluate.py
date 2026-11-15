@@ -63,7 +63,7 @@ def risk_coverage(correct: np.ndarray, conf: np.ndarray):
     n = np.arange(1, len(errs) + 1)
     coverage = n / len(errs)
     risk = np.cumsum(errs) / n
-    aurc = float(np.mean(risk))   # was np.trapz, which NumPy >= 2.4 removed
+    aurc = float(np.trapz(risk, coverage))  # np.trapezoid in NumPy >= 2.0
     return coverage, risk, aurc
 
 
