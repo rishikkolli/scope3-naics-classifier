@@ -15,7 +15,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 OUT = Path(__file__).resolve().parents[1] / "docs" / "milestone3_report.pdf"
 
@@ -69,7 +69,7 @@ def T(rows, widths):
         ("TOPPADDING", (0, 0), (-1, -1), 1.2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
     ]))
-    story.append(t)
+    story.append(KeepTogether([t]))   # never split a table across pages
     story.append(Spacer(1, 3))
 
 
@@ -85,7 +85,8 @@ P("Each purchase record (description, supplier, amount) is mapped to a 2022 NAIC
   "predictions pass through the Census concordance). The pipeline is implemented end to end: a corpus of 22,397 "
   "NAICS chunks (titles, definitions and index phrases); BM25, dense (e5-base-v2) and hybrid retrievers; two "
   "non-LLM baselines; four LLM stages that run on Claude Haiku 4.5 or GPT-4o-mini (S0c zero-shot, S1 choose from "
-  "top-k candidates, S2 plus the five nearest labeled examples, S3 plus amount and supplier); a confidence model that "
+  "top-k candidates, S2 plus the five nearest labeled examples, S3 plus amount and supplier), with candidates "
+  "from BM25, the hybrid retriever, the supervised model, or a union of the supervised model and BM25; a confidence model that "
   "combines retrieval margin and model probability; and an evaluation harness reporting hierarchical accuracy, "
   "factor-equivalent accuracy, emissions error, recall@k, AUROC, AURC, ECE and accuracy at fixed coverage, with "
   "bootstrap confidence intervals. Evaluation so far uses the frozen federal test split: 299 USAspending contracts "
@@ -111,7 +112,7 @@ P("<b>Confidence and abstention on S0b (299 items).</b> Confidence separates rig
   "being wrong.")
 P("<b>LLM stages (first 50 test items, Claude Haiku 4.5, five samples per item, k = 10).</b> All rows below are "
   "scored on the same 50 items; total API cost was $1.56.")
-T([["Run", "Candidates", "acc@2", "acc@6", "Factor-equiv.", "Gold in top-10", "AUROC (verbal conf.)"],
+T([["Run", "Candidates", "acc@2", "acc@6", "Factor-eq.", "Gold in top-10", "AUROC (verbal conf.)"],
    ["S0b TF-IDF + logreg", "-", "0.82", "0.76", "0.76", "-", "-"],
    ["S0c zero-shot", "none", "0.38", "0.18", "0.24", "-", "0.71"],
    ["S1 choose from top-10", "BM25", "0.30", "0.16", "0.20", "15 / 50", "0.76"],
@@ -119,9 +120,17 @@ T([["Run", "Candidates", "acc@2", "acc@6", "Factor-equiv.", "Gold in top-10", "A
    ["<b>S2 + 5 labeled examples</b>", "logreg top-10", "<b>0.88</b>", "<b>0.80</b>", "<b>0.87</b>", "47 / 50", "0.84"],
    ["S3 + amount, supplier", "logreg top-10", "0.86", "0.80", "0.85", "47 / 50", "0.87"]],
   [1.75, 1.05, 0.6, 0.6, 0.9, 1.0, 1.1])
-P("S2 is 4 points above the logistic-regression baseline on these items (0.80 vs 0.76), but the paired bootstrap "
-  "interval for the difference is [-0.08, +0.16], so this is not yet a significant gain. Using S3's verbal "
-  "confidence to abstain, accuracy on the answered items is 0.94 at 70% coverage and 0.93 at 80%.")
+P("<b>Full test set (299 items).</b> We then ran S3 on all 299 items (three samples per item, $1.57) and scored "
+  "both systems with the full harness, which also accepts 2017-to-2022 concordance equivalents:")
+T([["System", "acc@2", "acc@6", "Factor-eq.", "C4 AUROC [95% CI]", "ECE", "acc at 70 / 80 / 90% cov."],
+   ["S0b TF-IDF + logreg", "0.819", "0.739", "0.749", "0.894 [0.851, 0.930]", "0.042", "0.923 / 0.845 / 0.796"],
+   ["S3 LLM, logreg top-10", "0.819", "0.722", "0.749", "0.917 [0.878, 0.949]", "0.031", "0.928 / 0.854 / 0.788"],
+   ["Pick higher-confidence system", "-", "0.759", "-", "-", "-", "-"]],
+  [1.75, 0.5, 0.5, 0.8, 1.45, 0.45, 1.55])
+P("The 4-point S2 gain on the first 50 items did not hold: on all 299, S3 minus S0b is -0.017 [-0.064, +0.023] "
+  "(paired bootstrap, p = 0.49), so the LLM ties the supervised baseline on accuracy. Its confidence is better "
+  "ranked and better calibrated, although the intervals overlap. Taking, per item, the prediction whose calibrated "
+  "confidence is higher gives 0.759, +0.020 [0.000, +0.040] over S0b.")
 
 H("3. What Worked and What Failed")
 P("<b>Raw similarity is not a usable signal (E1).</b> For 262 items, the best-scoring chunk of the correct code has a "
@@ -133,7 +142,8 @@ P("<b>Retrieval misses dominate the emissions error.</b> Error analysis of S0b a
   "error to 25 retrieval misses, where the correct code never reached the candidate list. The 38 selection errors "
   "(correct code retrieved but not chosen) account for only 3.3%, and NAICS version mismatches for 1.0%. Near-neighbor "
   "confusions (for example 811210 vs 811219, both repair codes) are frequent but cheap, because the two codes usually "
-  "share an emission factor.")
+  "share an emission factor. The same pattern holds for the full S3 run: retrieval misses (42 items) cause 86% of "
+  "its emissions error.")
 P("<b>The LLM fails without candidates or examples.</b> Zero-shot, the model produces plausible but wrong codes for "
   "terse government strings such as \"IGF::OT::IGF\" or part numbers (\"8503119313!SPACER,SLEEVE\"), which carry "
   "almost no product information. With BM25 candidates it is limited by retrieval: the gold code was available for "
@@ -147,9 +157,18 @@ P("<b>Confidence levels are inflated, but rankings are useful.</b> Mean self-rep
   "16% to 80% accuracy, so the raw numbers cannot be used as probabilities. Their ranking still predicts errors "
   "(AUROC 0.71 to 0.87), and becomes more informative as the system improves. Self-consistency vote agreement is a "
   "weak signal (AUROC 0.47 to 0.69) because most items receive 5/5 agreement.")
+P("<b>Small-sample gains were misleading, but the errors are complementary.</b> The 50-item comparison suggested "
+  "the LLM beat the baseline; the full set did not confirm it. The two systems do fail on different items, though. "
+  "They agree on 73% of items and are 89% accurate when they agree, and at least one of them is right on 81%. "
+  "Agreement alone predicts correctness with AUROC 0.81.")
+P("<b>A single award dominates emissions error.</b> One $676M health-insurance contract (524114) that the baseline "
+  "codes as remediation services (562910, a factor about 30 times higher) causes 94% of the baseline's 25.6% "
+  "emissions error. S3 codes it closer (2.2% total error). Excluding that item, the errors are 1.6% and 1.0%, so "
+  "we now report emissions error with and without the largest item.")
 P("<b>An evaluation bug.</b> Award IDs are not unique in the test split (\"0001\" appears 27 times), so our first "
   "LLM scoring matched predictions to the wrong rows. We now match by row position and check the order explicitly.")
 
+story.append(CondPageBreak(1.2 * inch))   # keep the heading with its table
 H("4. Iterations and Improvements")
 T([["Change", "Why", "Effect"],
    ["Chunk-level index with max-per-code aggregation; dense and hybrid retrieval",
@@ -165,27 +184,31 @@ T([["Change", "Why", "Effect"],
     "Gold in candidates 15 to 47; acc@6 0.16 to 0.52"],
    ["Add 5 nearest labeled examples (S2)", "LLM ignored coding conventions", "acc@6 0.52 to 0.80"],
    ["Add amount and supplier (S3)", "Disambiguate goods vs services", "acc@6 unchanged; conf. AUROC 0.84 to 0.87"],
-   ["Score by row position", "Duplicate award IDs", "Corrected all LLM metrics"]],
+   ["Score by row position", "Duplicate award IDs", "Corrected all LLM metrics"],
+   ["Run S3 on all 299 items (3 samples)", "Check the 50-item result", "acc@6 0.722 vs 0.739 (n.s.); AUROC 0.917"],
+   ["Pick the higher-confidence system per item", "Errors are complementary", "acc@6 0.759 (+0.020 vs S0b)"],
+   ["Union of supervised and BM25 candidates", "Codes unseen in the federal pool", "Federal recall@10 0.866 to 0.873"]],
   [2.45, 2.3, 2.25])
 
 H("5. Remaining Gaps")
 P("<b>No results on messy data yet.</b> Our main claim concerns corporate-style purchase-card text, and every "
   "number above comes from federal contracts. Hand labels (two annotators, Cohen's kappa) are the main blocker. "
-  "<b>Small LLM sample.</b> The LLM stages have been run on 50 of 299 items, so the S2-vs-baseline difference is "
-  "within noise. <b>Candidate generation depends on federal training data.</b> The logistic-regression candidates "
+  "<b>The LLM alone does not beat the supervised baseline on federal data.</b> Its value so far is better "
+  "confidence and complementary errors; the combination gain (+0.020) is small and was measured with confidence "
+  "models cross-fit on the same split, so it needs a held-out confirmation. <b>Candidate generation depends on federal training data.</b> The logistic-regression candidates "
   "only cover the 436 codes seen in the pool and will transfer poorly to purchase cards, where the definition-based "
-  "retrievers have only 0.39 recall@10. <b>Abstention for the LLM is not calibrated.</b> We have rankings but not "
-  "the combined, calibrated confidence model or coverage targets on a held-out calibration split. "
+  "retrievers have only 0.39 recall@10. <b>Calibration is in-split.</b> Confidence models are cross-fit within the "
+  "federal test set; the planned purchase-card calibration split does not exist until labeling is done. "
   "<b>Federal labels are not audited.</b> The planned 50-item audit of award NAICS codes has not been done.")
 
 H("6. Next Steps (prioritized)")
 P("1. <b>Label the purchase-card set</b> (200 test, 100 calibration; two annotators per item), adjudicate "
-  "disagreements and report inter-annotator agreement. 2. <b>Union candidates</b> from logistic regression and the "
-  "hybrid retriever, so codes unseen in the federal pool can still be proposed, and measure recall@10 on both splits. "
-  "3. <b>Run S2 and S3 on all 299 federal items and the messy test set</b> (three samples per item to stay within "
-  "budget) and compare against S0b with paired bootstrap intervals. 4. <b>Fit the combined confidence model</b> "
-  "(verbal confidence, retrieval margin, vote agreement) on the calibration split and report AUROC, ECE and "
-  "accuracy and emissions error at 70/80/90% coverage on both splits. 5. <b>Error analysis on messy data</b> "
+  "disagreements and report inter-annotator agreement. 2. <b>Run S3 with union candidates on the purchase-card "
+  "test set</b> and compare against S0b with paired bootstrap intervals; this is where the LLM should help most, "
+  "since the supervised model has not seen corporate-style text. 3. <b>Validate the combined system</b> (pick the "
+  "higher-confidence prediction, or use agreement as a signal) with confidence models fit on the purchase-card "
+  "calibration split and tested on the held-out split. 4. <b>Report abstention on both splits</b>: AUROC, ECE, and "
+  "accuracy and emissions error at 70/80/90% coverage. 5. <b>Error analysis on messy data</b> "
   "(merchant-category miscoding, ambiguous retailer purchases) and the 50-item federal audit. 6. Final report and "
   "presentation.")
 
