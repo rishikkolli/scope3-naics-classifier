@@ -51,6 +51,35 @@ class BM25Retriever:
         return _aggregate_by_code(self.chunks, scores, k)
 
 
+class LogregRetriever:
+    """Supervised candidate generator: top-k classes of a TF-IDF + logistic-regression
+    model trained on gov_pool (the S0b baseline). Only codes seen in training can be
+    proposed, so it complements rather than replaces the definition-based retrievers.
+    Each candidate carries its NAICS definition (or title) text for the LLM prompt."""
+
+    def __init__(self, chunks: list[Chunk], pool_texts: list[str], pool_codes: list[str]):
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import make_pipeline
+        self.clf = make_pipeline(
+            TfidfVectorizer(sublinear_tf=True, min_df=2, ngram_range=(1, 2)),
+            LogisticRegression(max_iter=2000, C=4.0, n_jobs=-1),
+        )
+        self.clf.fit(pool_texts, pool_codes)
+        self.classes = np.array(self.clf.classes_)
+        self.text: dict[str, str] = {}
+        for c in chunks:   # prefer the definition chunk, fall back to the title
+            if c.kind == "definition" or c.naics6 not in self.text:
+                self.text[c.naics6] = c.text
+
+    def search(self, query: str, k: int = 20) -> list[Candidate]:
+        proba = self.clf.predict_proba([query])[0]
+        top = np.argsort(-proba)[:k]
+        return [Candidate(str(self.classes[j]), float(proba[j]), i + 1,
+                          self.text.get(str(self.classes[j]), str(self.classes[j])))
+                for i, j in enumerate(top)]
+
+
 class DenseRetriever:
     """Asymmetric embeddings. e5 models need 'query: ' / 'passage: ' prefixes."""
 

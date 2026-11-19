@@ -25,7 +25,8 @@ sys.path.insert(0, str(ROOT))
 from src import classify                                   # noqa: E402
 from src.data import load_gov                              # noqa: E402
 from src.naics_corpus import build_chunks                  # noqa: E402
-from src.retrieval import BM25Retriever, DenseRetriever, HybridRetriever  # noqa: E402
+from src.retrieval import (BM25Retriever, DenseRetriever, HybridRetriever,  # noqa: E402
+                           LogregRetriever)
 
 RUNS = ROOT / "eval" / "runs"
 
@@ -34,6 +35,11 @@ def build_retriever(kind: str = "hybrid"):
     chunks = build_chunks(ROOT / "data" / "raw")
     if kind == "bm25":
         return BM25Retriever(chunks)
+    if kind == "logreg":
+        # same query text the LLM loop builds: "<description> (supplier: <recipient>)"
+        pool = load_gov("gov_pool")
+        texts = (pool["description"] + " (supplier: " + pool["recipient"] + ")").tolist()
+        return LogregRetriever(chunks, texts, pool["naics6"].tolist())
     return HybridRetriever(BM25Retriever(chunks),
                            DenseRetriever(chunks, cache_dir=ROOT / "data" / "index"))
 
@@ -58,8 +64,9 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--k", type=int, default=10)
     ap.add_argument("--n-samples", type=int, default=5)
-    ap.add_argument("--retriever", choices=["hybrid", "bm25"], default="hybrid",
-                    help="candidate generator for S1-S3 (bm25 needs no embedding model)")
+    ap.add_argument("--retriever", choices=["hybrid", "bm25", "logreg"], default="hybrid",
+                    help="candidate generator for S1-S3: hybrid (BM25+e5), bm25 (no "
+                         "embedding model), logreg (supervised top-k from gov_pool)")
     ap.add_argument("--run-id", default=None, help="output name (default: the stage)")
     args = ap.parse_args()
 
