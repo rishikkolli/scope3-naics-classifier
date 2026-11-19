@@ -30,8 +30,10 @@ from src.retrieval import BM25Retriever, DenseRetriever, HybridRetriever  # noqa
 RUNS = ROOT / "eval" / "runs"
 
 
-def build_retriever():
+def build_retriever(kind: str = "hybrid"):
     chunks = build_chunks(ROOT / "data" / "raw")
+    if kind == "bm25":
+        return BM25Retriever(chunks)
     return HybridRetriever(BM25Retriever(chunks),
                            DenseRetriever(chunks, cache_dir=ROOT / "data" / "index"))
 
@@ -56,6 +58,9 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--k", type=int, default=10)
     ap.add_argument("--n-samples", type=int, default=5)
+    ap.add_argument("--retriever", choices=["hybrid", "bm25"], default="hybrid",
+                    help="candidate generator for S1-S3 (bm25 needs no embedding model)")
+    ap.add_argument("--run-id", default=None, help="output name (default: the stage)")
     args = ap.parse_args()
 
     from dotenv import load_dotenv
@@ -68,7 +73,7 @@ def main() -> None:
     if args.limit:
         test = test.head(args.limit)
 
-    retr = build_retriever() if args.stage != "S0c" else None
+    retr = build_retriever(args.retriever) if args.stage != "S0c" else None
     shots = fewshot_index(load_gov("gov_pool")) if args.stage in ("S2", "S3") else None
 
     preds, t0 = [], time.time()
@@ -91,13 +96,14 @@ def main() -> None:
             print(f"  {len(preds)}/{len(test)}  cost so far ${sum(x.cost_usd for x in preds):.2f}")
 
     RUNS.mkdir(parents=True, exist_ok=True)
-    out = {"run": args.stage, "n": len(preds), "k": args.k, "provider": classify.PROVIDER, "model": classify.MODEL,
+    run_id = args.run_id or args.stage
+    out = {"run": run_id, "stage": args.stage, "retriever": args.retriever, "n": len(preds), "k": args.k, "provider": classify.PROVIDER, "model": classify.MODEL,
            "n_samples": args.n_samples, "wall_seconds": round(time.time() - t0, 1),
            "cost_usd": round(sum(p.cost_usd for p in preds), 4),
            "items": [vars(p) for p in preds]}
-    (RUNS / f"{args.stage}.json").write_text(json.dumps(out, indent=1))
-    print(f"saved eval/runs/{args.stage}.json  (${out['cost_usd']:.2f}, "
-          f"{out['wall_seconds']:.0f}s). Score it with scripts/score_run.py {args.stage}")
+    (RUNS / f"{run_id}.json").write_text(json.dumps(out, indent=1))
+    print(f"saved eval/runs/{run_id}.json  (${out['cost_usd']:.2f}, "
+          f"{out['wall_seconds']:.0f}s). Score it with scripts/score_run.py {run_id}")
 
 
 if __name__ == "__main__":
