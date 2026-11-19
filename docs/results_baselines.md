@@ -1,24 +1,24 @@
-# Baseline, few-shot and emissions results (Simranjeet)
+# Baseline, few-shot and emissions results
 
-Milestone-3 runs for the components I own: the non-LLM baselines, the few-shot example
-selector, query rewriting and the emissions calculation. Everything here is local and
-free to re-run — no API calls.
+Milestone-3 runs for the non-LLM baselines, the few-shot example selector, query
+rewriting and the emissions calculation. Everything here is local and free to re-run —
+no API calls.
 
-These three scripts only need pandas, numpy, scikit-learn, openpyxl and reportlab — not
-the retrieval or LLM stack in `requirements.txt`:
+These scripts only need pandas, numpy, scikit-learn and openpyxl — not the retrieval or
+LLM stack in `requirements.txt`. `reportlab` is needed only to rebuild the report PDF:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install pandas numpy scikit-learn scipy reportlab openpyxl
 ```
 
-Run them in this order (the report builder reads the first three's output):
-
 ```bash
-python scripts/analyze_emissions_sensitivity.py       # emissions structure      (~1 min)
-python scripts/run_baseline_ablations.py              # A1-A8 + recall ceilings  (~5 min)
+python scripts/analyze_emissions_sensitivity.py       # emissions structure       (~1 min)
+python scripts/run_baseline_ablations.py              # A1-A8 + recall ceilings   (~5 min)
 python scripts/run_baseline_ablations.py --combined   # A9/A10 + paired bootstrap (~3 min)
-python scripts/build_milestone3_simranjeet_pdf.py     # -> docs/milestone3_simranjeet.pdf
 ```
+
+`scripts/build_milestone3_pdf.py` quotes these numbers but hardcodes them, like the rest
+of the Milestone 3 report, so it does not need the runs above to build.
 
 Frozen outputs land in `eval/runs/ablations_s0b.json` and
 `eval/runs/emissions_sensitivity.json`. Those paths are gitignored, so this file is the
@@ -48,7 +48,7 @@ A2 reproduces the published S0b exactly (`docs/results.md`), so the deltas are l
 | A9 word+char, LinearSVC | 0.8662 | 0.8094 | 0.7692 | 0.7875 | 0.0065 | 7s | **+0.040 [+0.007, +0.074]**, p = 0.024, 20W/8L |
 | **A10 word+char, LinearSVC, +amount** | **0.8696** | **0.8127** | **0.7759** | **0.7949** | 0.0078 | 8s | **+0.047 [+0.013, +0.084]**, p = 0.011, 22W/8L |
 
-For reference, `S3_logreg_full` (my LLM pipeline) is acc@6 0.722 — **below A10**. A10 should
+For reference, `S3_logreg_full` is acc@6 0.722 — **below A10**. A10 should
 become the baseline, but `LinearSVC` has no `predict_proba`, so it needs Platt scaling
 before the C-series confidence model can consume it.
 
@@ -61,7 +61,7 @@ before the C-series confidence model can consume it.
 | same, on R5-lite normalized text | 0.7258 | 0.7893 | 0.8194 | 0.8528 | 0.8863 | — |
 
 The few-shot index in `scripts/run_classifier.py` is fit on `"<desc> <recipient>"` but
-queried with `"<desc> (supplier: <recipient>)"`. I checked: the mismatch changes nothing
+queried with `"<desc> (supplier: <recipient>)"`. Checked: the mismatch changes nothing
 (identical recall at every k, because the extra token is constant across queries). Dropping
 the recipient from the query *does* matter — recall@5 falls 0.8361 → 0.7592.
 
