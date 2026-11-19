@@ -80,6 +80,27 @@ class LogregRetriever:
                 for i, j in enumerate(top)]
 
 
+class UnionRetriever:
+    """Top-n codes from a supervised retriever, then fill to k from a definition-based one.
+    The supervised model only knows codes seen in training (97.7% of gov_test gold codes,
+    far fewer on purchase-card data); the second retriever can still propose unseen codes.
+    Scores of the filled candidates are None, so the retrieval margin uses the first two."""
+
+    def __init__(self, primary, secondary, n_primary: int = 7):
+        self.primary, self.secondary, self.n_primary = primary, secondary, n_primary
+
+    def search(self, query: str, k: int = 20) -> list[Candidate]:
+        out = self.primary.search(query, min(self.n_primary, k))
+        seen = {c.naics6 for c in out}
+        for c in self.secondary.search(query, k + len(out)):
+            if len(out) >= k:
+                break
+            if c.naics6 not in seen:
+                seen.add(c.naics6)
+                out.append(Candidate(c.naics6, None, len(out) + 1, c.best_chunk_text))
+        return out
+
+
 class DenseRetriever:
     """Asymmetric embeddings. e5 models need 'query: ' / 'passage: ' prefixes."""
 
