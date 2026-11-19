@@ -13,6 +13,7 @@ Everything here runs locally with no API calls, so it can be re-run for free:
 
 Usage:  python scripts/run_baseline_ablations.py
 Writes: eval/runs/ablations_s0b.json
+        (re-run with --combined for the stacked variants and their paired bootstrap)
 """
 from __future__ import annotations
 
@@ -208,5 +209,67 @@ def main() -> None:
     print(f"\nsaved {RUNS / 'ablations_s0b.json'}")
 
 
+
+
+# =============================================================== follow-up (step 2)
+def combined() -> None:
+    """A9/A10: stack the three ablations that each helped (char n-grams, amount bucket,
+    hinge loss) and test the gain against S0b with a paired bootstrap."""
+    pool, test = load_gov("gov_pool"), load_gov("gov_test")
+    lookup = FactorLookup(ROOT / "data" / "raw")
+    gold = np.array(test["naics6"].tolist())
+    rng = np.random.default_rng(0)
+
+    def wc():
+        return FeatureUnion([("w", word_tfidf()), ("c", char_tfidf())])
+
+    specs = {
+        "A2_ref (= S0b)": (word_tfidf, logreg, False),
+        "A9_word+char, LinearSVC": (wc, lambda: LinearSVC(C=1.0), False),
+        "A10_word+char, LinearSVC, +amount": (wc, lambda: LinearSVC(C=1.0), True),
+    }
+    preds, results = {}, {}
+    for name, (vec, clf_f, amt) in specs.items():
+        Xtr = text_of(pool, amount_bucket=amt)
+        Xte = text_of(test, amount_bucket=amt)
+        t0 = time.time()
+        clf = make_pipeline(vec(), clf_f())
+        clf.fit(Xtr, pool["naics6"])
+        p = np.array(list(clf.predict(Xte)))
+        preds[name] = p
+        m = metrics(list(gold), list(p), test, lookup)
+        m["fit_seconds"] = round(time.time() - t0, 1)
+        results[name] = m
+        print(f"{name:36s} acc@6={m['acc@6']:.4f} acc@2={m['acc@2']:.4f} "
+              f"fe={m['factor_equiv_acc']:.4f} ({m['fit_seconds']}s)")
+
+    ref = preds["A2_ref (= S0b)"] == gold
+    boots = {}
+    for name, p in preds.items():
+        if name.startswith("A2_ref"):
+            continue
+        d = (p == gold).astype(float) - ref.astype(float)
+        idx = rng.integers(0, len(d), size=(5000, len(d)))
+        samp = d[idx].mean(axis=1)
+        boots[name] = {"delta_acc6": round(float(d.mean()), 4),
+                       "ci95": [round(float(np.percentile(samp, 2.5)), 4),
+                                round(float(np.percentile(samp, 97.5)), 4)],
+                       "p_two_sided": round(float(2 * min((samp <= 0).mean(), (samp >= 0).mean())), 4),
+                       "wins": int(((p == gold) & ~ref).sum()),
+                       "losses": int((~(p == gold) & ref).sum())}
+        print(f"  {name} minus S0b: {boots[name]['delta_acc6']:+.4f} "
+              f"{boots[name]['ci95']} p={boots[name]['p_two_sided']} "
+              f"({boots[name]['wins']}W/{boots[name]['losses']}L)")
+
+    f = RUNS / "ablations_s0b.json"
+    data = json.loads(f.read_text()) if f.exists() else {}
+    data["combined"] = results
+    data["combined_bootstrap_vs_s0b"] = boots
+    f.write_text(json.dumps(data, indent=1))
+    print(f"\nupdated {f}")
+
 if __name__ == "__main__":
-    main()
+    if "--combined" in sys.argv:
+        combined()
+    else:
+        main()
