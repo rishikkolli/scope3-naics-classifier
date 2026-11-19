@@ -69,8 +69,9 @@ def _complete(system: str, user_msg: str, n: int, temperature: float,
         texts, tin, tout = [], 0, 0
         for _ in range(n):
             kw = {"system": system} if system else {}
+            # anthropic SDK >= 2 has no temperature argument; default sampling
+            # already gives varied samples for the self-consistency vote
             r = client.messages.create(model=MODEL, max_tokens=max_tokens,
-                                       temperature=temperature,
                                        messages=[{"role": "user", "content": user_msg}], **kw)
             texts.append("".join(b.text for b in r.content if b.type == "text"))
             tin += r.usage.input_tokens
