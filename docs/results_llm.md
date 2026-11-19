@@ -50,3 +50,50 @@ Takeaways:
 - Scoring note: `item_id` is not unique in `gov_test` (award IDs like `0001` repeat), so
   `score_run.py` matches items by row position.
 - Total Claude API spend for all runs above: $1.56.
+
+# Full gov_test run (299 items)
+
+`S3_logreg_full`: S3 (5 nearest labeled examples + amount and supplier), logreg top-10
+candidates, `claude-haiku-4-5`, **3** samples per item, $1.57. Scored with the full S4 harness,
+which also accepts 2017-to-2022 concordance equivalents as correct:
+
+```
+python scripts/run_classifier.py --stage S3 --retriever logreg --run-id S3_logreg_full --n-samples 3
+python scripts/run_confidence_eval.py S3_logreg_full S0b_tfidf_logreg_proba
+python scripts/run_confidence_eval.py --compare S0b_tfidf_logreg_proba S3_logreg_full
+python scripts/compare_systems.py S0b_tfidf_logreg_proba S3_logreg_full
+```
+
+| metric | S0b TF-IDF + logreg | S3 LLM (logreg top-10) |
+|---|---|---|
+| acc@2 / acc@4 / acc@6 | 0.819 / 0.756 / 0.739 | 0.819 / 0.769 / 0.722 |
+| factor_equiv_acc | 0.749 | 0.749 |
+| emissions_rel_error | 0.256 | 0.022 |
+| emissions_rel_error, excluding row 102 | 0.016 | 0.010 |
+| C4 AUROC [95% CI] | 0.894 [0.851, 0.930] | 0.917 [0.878, 0.949] |
+| AURC / ECE | 0.070 / 0.042 | 0.070 / 0.031 |
+| acc at 70% / 80% / 90% coverage | 0.923 / 0.845 / 0.796 | 0.928 / 0.854 / 0.788 |
+| review 10% by expected emissions error: share of emissions error removed | 0.998 | 0.979 |
+
+S3 minus S0b on acc@6 (paired bootstrap): **-0.017 [-0.064, +0.023], p = 0.49**.
+
+Findings:
+
+- The +0.04 gain on the first 50 items did not hold on all 299: S3 ties the supervised baseline
+  on accuracy (difference not significant).
+- The large emissions-error gap is one item: row 102 is a $676M award coded 524114 (health
+  insurance carriers); S0b predicts 562910 (remediation, ~30x the factor) and alone causes 94% of
+  S0b's emissions error. Excluding it, the errors are 1.6% (S0b) and 1.0% (S3).
+- S3 confidence is better ranked and better calibrated (AUROC 0.917 vs 0.894, ECE 0.031 vs 0.042;
+  CIs overlap). The C4 model leans on verbal confidence (0.875 alone) and retrieval margin
+  (0.856); self-consistency over 3 samples adds little (0.563).
+- The two systems err on different items: they agree on 72.6% of items (89.4% accurate when they
+  agree; agreement alone has AUROC 0.811), and at least one is right on 80.6%.
+- Exploratory combination, taking per item the prediction with the higher cross-fit C4
+  confidence: acc@6 **0.759**, +0.020 [0.000, +0.040] over S0b (8 wins, 2 losses). Both
+  confidences are cross-fit on gov_test itself, so this needs confirming on a held-out split.
+- Errors (S3, design.md section 6): retrieval misses (gold code not among the candidates,
+  42 items, 11 of them NAICS-version mismatches) cause 86% of emissions error; selection
+  errors (41 items, 10 near-neighbor) cause 13%.
+
+Total Claude API spend so far: about $3.15.
