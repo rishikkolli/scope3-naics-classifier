@@ -5,7 +5,9 @@
   rag_fewshot    : + nearest labeled training examples (S2; S3 adds amount/MCC context)
 Every call logs candidates, raw samples, tokens and latency for error analysis.
 
-Needs OPENAI_API_KEY in .env (model set in configs/config.yaml).
+Provider is picked from .env: LLM_PROVIDER=anthropic|openai, or auto-detected from
+whichever of ANTHROPIC_API_KEY / OPENAI_API_KEY is set (Anthropic wins if both are).
+LLM_MODEL overrides the default model for the provider.
 """
 from __future__ import annotations
 
@@ -19,9 +21,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
-# gpt-4o-mini pricing, USD per 1M tokens, for cost logging
-_PRICE_IN, _PRICE_OUT = 0.15, 0.60
+def _provider() -> str:
+    p = os.environ.get("LLM_PROVIDER", "").strip().lower()
+    if p:
+        return p
+    return "anthropic" if os.environ.get("ANTHROPIC_API_KEY") else "openai"
+
+
+PROVIDER = _provider()
+_DEFAULTS = {
+    # model, USD per 1M input tokens, USD per 1M output tokens (cost logging only)
+    "openai": ("gpt-4o-mini", 0.15, 0.60),
+    "anthropic": ("claude-haiku-4-5", 1.00, 5.00),
+}
+MODEL = os.environ.get("LLM_MODEL", _DEFAULTS[PROVIDER][0])
+_PRICE_IN = float(os.environ.get("LLM_PRICE_IN", _DEFAULTS[PROVIDER][1]))
+_PRICE_OUT = float(os.environ.get("LLM_PRICE_OUT", _DEFAULTS[PROVIDER][2]))
 
 
 @dataclass
@@ -38,8 +53,35 @@ class Prediction:
 
 
 def _client():
+    if PROVIDER == "anthropic":
+        from anthropic import Anthropic
+        return Anthropic()
     from openai import OpenAI
     return OpenAI()
+
+
+def _complete(system: str, user_msg: str, n: int, temperature: float,
+              max_tokens: int = 300) -> tuple[list[str], int, int]:
+    """Return (texts, input_tokens, output_tokens) for n completions on either provider."""
+    client = _client()
+    if PROVIDER == "anthropic":
+        # Messages API has no n parameter, so sample n times
+        texts, tin, tout = [], 0, 0
+        for _ in range(n):
+            kw = {"system": system} if system else {}
+            r = client.messages.create(model=MODEL, max_tokens=max_tokens,
+                                       temperature=temperature,
+                                       messages=[{"role": "user", "content": user_msg}], **kw)
+            texts.append("".join(b.text for b in r.content if b.type == "text"))
+            tin += r.usage.input_tokens
+            tout += r.usage.output_tokens
+        return texts, tin, tout
+    msgs = ([{"role": "system", "content": system}] if system else []) + \
+        [{"role": "user", "content": user_msg}]
+    r = client.chat.completions.create(model=MODEL, n=n, temperature=temperature,
+                                       max_tokens=max_tokens, messages=msgs)
+    return ([c.message.content or "" for c in r.choices],
+            r.usage.prompt_tokens, r.usage.completion_tokens)
 
 
 _SYSTEM = (
@@ -72,20 +114,16 @@ def _parse(text: str) -> dict:
 
 
 def _call(user_msg: str, n_samples: int, item_id: str, candidates: list[str]) -> Prediction:
-    client = _client()
     t0 = time.time()
-    # one deterministic answer + (n_samples-1) sampled ones for self-consistency
-    resp = client.chat.completions.create(
-        model=MODEL, n=n_samples, temperature=0.7 if n_samples > 1 else 0.0,
-        messages=[{"role": "system", "content": _SYSTEM},
-                  {"role": "user", "content": user_msg}])
+    # n_samples sampled answers; the majority vote is the prediction (self-consistency, C1)
+    texts, tin, tout = _complete(_SYSTEM, user_msg, n_samples,
+                                 0.7 if n_samples > 1 else 0.0)
     latency = time.time() - t0
-    parsed = [_parse(c.message.content or "") for c in resp.choices]
+    parsed = [_parse(t) for t in texts]
     samples = [str(p.get("naics6", "")) for p in parsed]
     best = max(set(samples), key=samples.count) if samples else ""
     first = next((p for p, s in zip(parsed, samples) if s == best), {})
-    usage = resp.usage
-    cost = (usage.prompt_tokens * _PRICE_IN + usage.completion_tokens * _PRICE_OUT) / 1e6
+    cost = (tin * _PRICE_IN + tout * _PRICE_OUT) / 1e6
     return Prediction(item_id=item_id, naics6=best, candidates=candidates, samples=samples,
                       verbal_conf=first.get("confidence"), rationale=str(first.get("rationale", "")),
                       cost_usd=cost, latency_s=latency)
@@ -122,12 +160,9 @@ def rag_fewshot(description: str, candidates, examples, item_id: str = "",
 
 def llm_rewrite(description: str, merchant: str = "", mcc: str = "") -> str:
     """R5: expand abbreviations / vendor jargon into a plain product or service phrase."""
-    client = _client()
-    resp = client.chat.completions.create(
-        model=MODEL, temperature=0.0,
-        messages=[{"role": "user", "content":
+    texts, _, _ = _complete("", (
                    "Rewrite this purchase record as a short plain-English phrase naming the "
                    "product or service bought (e.g. 'dell lat 5540 x10' -> 'laptop computers'). "
                    "Reply with the phrase only.\n\n"
-                   + _record_text(description, merchant, mcc)}])
-    return (resp.choices[0].message.content or description).strip()
+                   + _record_text(description, merchant, mcc)), 1, 0.0, max_tokens=60)
+    return (texts[0] or description).strip()

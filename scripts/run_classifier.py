@@ -5,7 +5,7 @@
   S2  rag_fewshot  + nearest labeled neighbors from gov_pool
   S3  rag_fewshot --with-context   + amount & recipient in the prompt
 
-Needs OPENAI_API_KEY in .env. Writes eval/runs/<stage>.json with per-item predictions,
+Needs ANTHROPIC_API_KEY or OPENAI_API_KEY in .env (see src/classify.py). Writes eval/runs/<stage>.json with per-item predictions,
 samples (for self-consistency), verbal confidence, cost and latency.
 
 Usage:  python scripts/run_classifier.py --stage S1 [--limit 50] [--k 10]
@@ -58,11 +58,11 @@ def main() -> None:
     ap.add_argument("--n-samples", type=int, default=5)
     args = ap.parse_args()
 
-    if not os.environ.get("OPENAI_API_KEY"):
-        from dotenv import load_dotenv
-        load_dotenv()
-    if not os.environ.get("OPENAI_API_KEY"):
-        sys.exit("OPENAI_API_KEY not set (copy .env.example to .env and fill it in)")
+    from dotenv import load_dotenv
+    load_dotenv()
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+        sys.exit("No API key: set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env "
+                 "(copy .env.example to .env)")
 
     test = load_gov("gov_test")
     if args.limit:
@@ -91,7 +91,7 @@ def main() -> None:
             print(f"  {len(preds)}/{len(test)}  cost so far ${sum(x.cost_usd for x in preds):.2f}")
 
     RUNS.mkdir(parents=True, exist_ok=True)
-    out = {"run": args.stage, "n": len(preds), "k": args.k, "model": classify.MODEL,
+    out = {"run": args.stage, "n": len(preds), "k": args.k, "provider": classify.PROVIDER, "model": classify.MODEL,
            "n_samples": args.n_samples, "wall_seconds": round(time.time() - t0, 1),
            "cost_usd": round(sum(p.cost_usd for p in preds), 4),
            "items": [vars(p) for p in preds]}
