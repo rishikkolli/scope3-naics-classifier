@@ -57,13 +57,17 @@ def auroc(correct: np.ndarray, conf: np.ndarray) -> float:
     return float(roc_auc_score(correct, conf))
 
 
+# np.trapz was removed in NumPy 2.4; np.trapezoid exists from 2.0 on. Same rule either way.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
+
 def risk_coverage(correct: np.ndarray, conf: np.ndarray):
     order = np.argsort(-np.asarray(conf, float), kind="stable")
     errs = 1 - np.asarray(correct)[order].astype(float)
     n = np.arange(1, len(errs) + 1)
     coverage = n / len(errs)
     risk = np.cumsum(errs) / n
-    aurc = float(np.trapz(risk, coverage))  # np.trapezoid in NumPy >= 2.0
+    aurc = float(_trapezoid(risk, coverage))
     return coverage, risk, aurc
 
 
