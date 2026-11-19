@@ -17,6 +17,10 @@ python scripts/run_baseline_ablations.py              # A1-A8 + recall ceilings 
 python scripts/run_baseline_ablations.py --combined   # A9/A10 + paired bootstrap (~3 min)
 ```
 
+`scripts/run_query_rewrite_eval.py` (R5) is the one script here that needs an API key, and
+only on its first run: it caches every rewrite to `eval/runs/R5_rewrites.json`, so later
+re-measurement costs nothing. All 299 rewrites cost $0.039 on `claude-haiku-4-5`.
+
 `scripts/build_milestone3_pdf.py` quotes these numbers but hardcodes them, like the rest
 of the Milestone 3 report, so it does not need the runs above to build.
 
@@ -109,3 +113,63 @@ where the noise is abbreviation rather than repetition.
   longer ones. 12.7% of descriptions contain `IGF::`.
 - A majority vote over the same five neighbours the LLM sees gets 0.642 (A8), against S3's
   0.722 — the LLM does use those examples better than nearest-neighbour voting.
+
+## R5: LLM query rewriting (negative result)
+
+`src/classify.py:llm_rewrite` had been implemented since the first LLM commit but no
+script called it, so R5 had no result either way. `scripts/run_query_rewrite_eval.py`
+rewrites each `gov_test` description once and then measures everything downstream locally.
+One classifier is trained on the pool's original `description + supplier` text and only the
+*test-side* text varies, which is what query rewriting means. (So `original description
+only` here is 0.6455, not the 0.6589 of ablation A1, which retrains on description-only
+pool text.)
+
+| test-side text | acc@2 | acc@4 | acc@6 | factor_equiv | emissions_rel_error |
+|---|---|---|---|---|---|
+| original description + supplier (= S0b) | 0.8194 | 0.7559 | 0.7291 | 0.7509 | 0.2549 |
+| **rewritten description + supplier** | 0.7291 | 0.6722 | 0.6355 | 0.6667 | 0.0912 |
+| rewritten description only | 0.5318 | 0.4682 | 0.4214 | 0.4799 | 0.0473 |
+| original description only | 0.7224 | 0.6622 | 0.6455 | 0.6886 | 0.2493 |
+
+Note the emissions column moves the *opposite* way to accuracy: rewriting drops acc@6 by
+nine points yet cuts `emissions_rel_error` from 0.2549 to 0.0912, because it happens to
+code row 102 differently. That is a clean demonstration of why that metric cannot rank
+systems on this split.
+
+Paired bootstrap, 5,000 resamples of the same 299 items:
+**−0.0936 [−0.1304, −0.0569], p < 0.001, 3 wins / 31 losses.**
+
+It also lowers both ceilings the LLM stages inherit:
+
+| k | 1 | 3 | 5 | 10 | 20 | 50 |
+|---|---|---|---|---|---|---|
+| few-shot recall, original query | 0.7391 | 0.7993 | 0.8361 | 0.8829 | 0.8963 | — |
+| few-shot recall, rewritten query | 0.6154 | 0.7458 | 0.7860 | 0.8395 | 0.8829 | — |
+| candidate recall, original | 0.7291 | 0.8227 | 0.8462 | 0.8696 | 0.8930 | 0.9197 |
+| candidate recall, rewritten | 0.6355 | 0.7559 | 0.7860 | 0.8161 | 0.8528 | 0.9097 |
+
+**Why.** The rewrites are fluent but they compress the text from 9.28 to 3.29 tokens
+(84% of rows get shorter, none is unchanged) and they *interpret* rather than normalize,
+inventing specificity where the original was opaque:
+
+| original | rewritten | gold | became |
+|---|---|---|---|
+| `SEAPORT ENHANCED` | network IT services | 541330 | 517110 |
+| `BASE LIFE SUPPORT (BLS) SERVICES IN ... AFRICA` | emergency medical services | 561210 | 621910 |
+| `AGGREGATE DELIVERY PORCUPINE MANTI LA SAL NF` | Oilfield services contract | 212312 | 213112 |
+| `PRIVATE COLLECTION AGENCY PERFORMS COLLECTI...` | Debt collection services for federal student loans | 561440 | 492110 |
+
+`BLS` is expanded as *basic* life support rather than *base* life support; `SEAPORT` is a
+Navy engineering vehicle the model did not recognise. The rare, opaque tokens in federal
+procurement text are exactly what identify an item, so a helpful paraphrase destroys the
+signal and adds hallucinated detail upstream of the classifier.
+
+All three rows the rewrite *fixed* are cases where date and quote boilerplate drowned a
+clear product noun, e.g. `BASE YEAR - APRIL 5, 2023 ... OEM HARDWARE MAINTENANCE. SEE
+QUO...` → `OEM hardware maintenance contract` (611430 → 811210, correct).
+
+**Conclusion.** R5 is dropped for the federal split. It stays worth one test on
+purchase-card text, where the noise is consumer abbreviation rather than government
+jargon, but the burden of proof has moved. Note this tests a rewritten query against an
+un-rewritten corpus; rewriting both sides, or pairing R5 with a dense retriever where
+vocabulary overlap matters less, is untested.

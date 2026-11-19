@@ -201,14 +201,19 @@ P("<b>Expensive and cheap errors separate cleanly.</b> Grouping the baseline's e
   "carry 0.02%. Sector accuracy is what the emissions estimate rests on; the last two digits barely matter. An "
   "oracle given the correct 4-digit parent and then the most common 6-digit child in the pool reaches 0.776 acc@6 "
   "at a 0.2% emissions error, which is a concrete case for hierarchical decoding.")
-P("<b>Query normalization did not help (negative result).</b> Because the zero-shot errors concentrate on "
-  "boilerplate and part numbers, we tested a deterministic normalizer that strips contracting boilerplate, "
-  "delivery- and task-order phrases and bare part numbers, as a free stand-in for the R5 LLM rewrite. It rewrote "
-  "133 of 299 descriptions and changed six-digit accuracy by nothing at all, while making two-digit accuracy and "
-  "few-shot neighbour recall slightly worse. IDF already discounts text that appears in every record, and the "
-  "part-number pattern removed genuine product tokens, emptying three descriptions outright. Rewriting can only "
-  "pay where the model cannot discount the noise itself, so R5 stays open for the purchase-card split, where the "
-  "noise is abbreviation rather than repetition.")
+P("<b>Query rewriting actively hurts, and the reason is instructive (R5).</b> Because the zero-shot errors "
+  "concentrate on boilerplate and part numbers, we expected cleaning the query to help. A deterministic "
+  "normalizer that strips contracting boilerplate, task-order phrases and bare part numbers rewrote 133 of 299 "
+  "descriptions and changed six-digit accuracy by nothing at all. We then ran the real LLM rewrite (one Haiku "
+  "call per item, $0.04 for all 299), and it is clearly harmful: acc@6 falls from 0.729 to 0.636, "
+  "<b>-0.094 [-0.130, -0.057], p &lt; 0.001, 3 wins against 31 losses</b>, and it also costs about five points of "
+  "few-shot neighbour recall and of candidate recall@10. The rewrites read well but they compress 9.3 tokens to "
+  "3.3 and interpret rather than normalize: \"SEAPORT ENHANCED\", a Navy engineering vehicle coded 541330, "
+  "becomes \"network IT services\"; \"BASE LIFE SUPPORT (BLS) SERVICES\" becomes \"emergency medical "
+  "services\" after BLS is expanded as basic life support. The opaque, rare tokens in federal procurement text "
+  "are precisely what identify an item, so a fluent paraphrase discards the signal and injects invented "
+  "specificity upstream of the classifier. R5 is dropped for the federal split; it is still worth one test on "
+  "purchase-card text, but the burden of proof has moved.")
 P("<b>The supervised baseline's ceiling is class coverage.</b> It predicts 90 distinct codes where the gold "
   "labels use 128 of the 436 available, and its top five classes take 26.4% of predictions against 17.4% of "
   "gold. On items whose gold code has at most two training examples it scores 0.000, against 0.813 where the "
@@ -242,8 +247,9 @@ T([["Change", "Why", "Effect"],
    ["Union of supervised and BM25 candidates", "Codes unseen in the federal pool", "Federal recall@10 0.866 to 0.873"],
    ["Char n-grams, hinge loss and an amount bucket in the baseline", "Needed to know which part of S0b works",
     "acc@6 0.729 to 0.776, +0.047 [+0.013, +0.084]"],
-   ["Deterministic query normalization", "Boilerplate and part numbers dominated the zero-shot errors",
-    "no change in acc@6; few-shot recall slightly worse"]],
+   ["Query rewriting: deterministic, then the real LLM rewrite (R5)",
+    "Boilerplate and part numbers dominated the zero-shot errors",
+    "no change, then acc@6 0.729 to 0.636, -0.094 [-0.130, -0.057]; dropped"]],
   [2.45, 2.3, 2.25])
 
 H("5. Remaining Gaps")
@@ -272,8 +278,8 @@ P("1. <b>Label the purchase-card set</b> (200 test, 100 calibration; two annotat
   "(merchant-category miscoding, ambiguous retailer purchases) and the 50-item federal audit. 6. <b>Promote the "
   "strengthened baseline</b> with Platt scaling so the confidence model keeps a probability input, and re-report "
   "every delta against it. 7. <b>Test hierarchical 2-to-4-to-6 decoding</b>, which the error structure now "
-  "justifies directly. 8. <b>Run the real R5 LLM rewrite on the messy split</b>, where the free proxy's failure "
-  "does not apply. 9. Final report and presentation.")
+  "justifies directly. 8. <b>Test R5 rewriting on purchase-card text only</b>, now that it is measured as "
+  "harmful on federal text. 9. Final report and presentation.")
 
 doc = SimpleDocTemplate(str(OUT), pagesize=letter, leftMargin=0.68 * inch, rightMargin=0.68 * inch,
                         topMargin=0.5 * inch, bottomMargin=0.5 * inch,
